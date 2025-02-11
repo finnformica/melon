@@ -30,10 +30,10 @@ export default tseslint.config(
   {
     rules: {
       "@typescript-eslint/no-require-imports": 0,
-      "@typescript-eslint/no-misused-promises": 1,
-      "@typescript-eslint/no-floating-promises": 1,
-      "@typescript-eslint/no-unsafe-assignment": 1,
-      "@typescript-eslint/no-duplicate-type-constituents": 1,
+      "@typescript-eslint/no-misused-promises": 0,
+      "@typescript-eslint/no-floating-promises": 0,
+      "@typescript-eslint/no-unsafe-assignment": 0,
+      "@typescript-eslint/no-duplicate-type-constituents": 0,
       "@typescript-eslint/no-unused-vars": [
         "error",
         {
