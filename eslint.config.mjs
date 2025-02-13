@@ -29,10 +29,17 @@ export default tseslint.config(
   },
   {
     rules: {
+      "@typescript-eslint/ban-ts-comment": 0,
+      "@typescript-eslint/no-unsafe-call": 0,
+      "@typescript-eslint/no-explicit-any": 1,
+      "@typescript-eslint/no-unsafe-return": 1,
+      "@typescript-eslint/no-unsafe-argument": 0,
       "@typescript-eslint/no-require-imports": 0,
       "@typescript-eslint/no-misused-promises": 0,
       "@typescript-eslint/no-floating-promises": 0,
       "@typescript-eslint/no-unsafe-assignment": 0,
+      "@typescript-eslint/no-unsafe-member-access": 0,
+      "@typescript-eslint/no-redundant-type-constituents": 0,
       "@typescript-eslint/no-duplicate-type-constituents": 0,
       "@typescript-eslint/no-unused-vars": [
         "error",

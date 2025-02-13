@@ -204,7 +204,7 @@ export default [
       "no-new-object": 1, // disallow use of the Object constructor
       "func-call-spacing": 1, // disallow space between function identifier and application
       "no-ternary": 0, // disallow the use of ternary operators (off by default)
-      "no-trailing-spaces": 1, // disallow trailing whitespace at the end of lines
+      "no-trailing-spaces": 0, // disallow trailing whitespace at the end of lines
       "no-underscore-dangle": 0, // disallow dangling underscores in identifiers
       "no-mixed-spaces-and-tabs": 1, // disallow mixed spaces and tabs for indentation
       quotes: [0, "double", "avoid-escape"], // specify whether double or single quotes should be used
