@@ -4,19 +4,19 @@
     "strict": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"],
-      "@assets/*": ["./assets/*"],
-      "tailwind.config": [
-        "./tailwind.config.js"
+      "@/*": [
+        "./*"
+      ],
+      "@/assets/*": [
+        "../../packages/shared/assets/*",
+        "./assets/*"
       ]
-    },
-    "jsx": "react-jsx"
+    }
   },
   "include": [
-    "src/**/*.ts",
-    "src/**/*.tsx",
+    "**/*.ts",
+    "**/*.tsx",
     ".expo/types/**/*.ts",
-    "expo-env.d.ts",
-    "nativewind-env.d.ts"
+    "expo-env.d.ts"
   ]
 }

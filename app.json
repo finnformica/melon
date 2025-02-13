@@ -1,22 +1,30 @@
 {
   "expo": {
-    "name": "melon",
-    "slug": "melon",
+    "name": "expo-app",
+    "slug": "expo-app",
     "version": "1.0.0",
     "orientation": "portrait",
-    "entryPoint": "./src/app/index.tsx",
     "icon": "./assets/images/icon.png",
     "scheme": "myapp",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.gluestack.expoapp"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
-      }
+      },
+      "package": "com.gluestack.expoapp"
     },
     "web": {
       "bundler": "metro",
@@ -25,19 +33,25 @@
     },
     "plugins": [
       "expo-router",
-      [
-        "expo-splash-screen",
-        {
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 200,
-          "resizeMode": "contain",
-          "backgroundColor": "#ffffff"
-        }
-      ]
+      "expo-font"
     ],
     "experiments": {
-      "typedRoutes": true,
-      "tsconfigPaths": true
-    }
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "148098d1-7e19-4326-9814-dd661a192776"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/148098d1-7e19-4326-9814-dd661a192776"
+    },
+    "owner": "gluestack"
   }
 }
