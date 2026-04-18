@@ -17,6 +17,7 @@ import { useGames } from '@/hooks/useGames'
 import { useMembers } from '@/hooks/useMembers'
 import { db } from '@/lib/firebase'
 import { normalizeGame } from '@/lib/gameSchema'
+import { isNpcId } from '@/lib/npc'
 import type { Game } from '@/types'
 
 const PLAYER_PALETTE = [
@@ -62,8 +63,8 @@ function LeagueChart({ leagueId }: { leagueId: string }) {
 
     const everPlayed = new Set<string>()
     for (const g of sorted) {
-      for (const u of g.winnerIds) everPlayed.add(u)
-      for (const u of g.loserIds) everPlayed.add(u)
+      for (const u of g.winnerIds) if (!isNpcId(u)) everPlayed.add(u)
+      for (const u of g.loserIds) if (!isNpcId(u)) everPlayed.add(u)
     }
     const players = [...everPlayed]
 

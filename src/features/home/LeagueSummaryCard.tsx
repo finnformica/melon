@@ -24,6 +24,7 @@ import type { LeagueMember } from '@/hooks/useMembers'
 import { useMembers } from '@/hooks/useMembers'
 import { useGames } from '@/hooks/useGames'
 import { deltaColorClass, formatDelta } from '@/lib/format'
+import { isNpcId } from '@/lib/npc'
 import { SPORT_LABELS } from '@/lib/schemas'
 import type { Sport } from '@/lib/schemas'
 import type { Game, League } from '@/types'
@@ -60,7 +61,7 @@ export function LeagueSummaryCard({
   const nameOf = useMemo(() => {
     const map = new Map<string, string>()
     for (const m of members ?? []) map.set(m.membership.userId, name(m))
-    return (uid: string): string => map.get(uid) ?? 'Unknown'
+    return (uid: string): string => isNpcId(uid) ? 'NPC' : (map.get(uid) ?? 'Unknown')
   }, [members])
 
   const rank = useMemo(() => {
@@ -236,6 +237,7 @@ export function LeagueSummaryCard({
               </DialogHeader>
               <div className="space-y-1.5">
                 {[...selectedGame.winnerIds, ...selectedGame.loserIds].map((uid) => {
+                  if (isNpcId(uid)) return null
                   const snap = selectedGame.playerElo[uid]
                   const isWinner = selectedGame.winnerIds.includes(uid)
                   if (!snap) return null
@@ -274,8 +276,8 @@ function LastGameTile({
   nameOf: (uid: string) => string
   onClick: () => void
 }) {
-  const winnerSnap = game.playerElo[game.winnerIds[0]]
-  const loserSnap = game.playerElo[game.loserIds[0]]
+  const winnerSnap = game.playerElo[game.winnerIds.find((u) => !isNpcId(u)) ?? '']
+  const loserSnap = game.playerElo[game.loserIds.find((u) => !isNpcId(u)) ?? '']
   const when = game.playedAt
     ? formatDistanceToNow(game.playedAt.toDate(), { addSuffix: true })
     : 'just now'
