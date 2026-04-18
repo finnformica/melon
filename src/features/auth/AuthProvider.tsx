@@ -1,8 +1,10 @@
 import {
+  createUserWithEmailAndPassword,
   GoogleAuthProvider,
   isSignInWithEmailLink,
   onAuthStateChanged,
   sendSignInLinkToEmail,
+  signInWithEmailAndPassword,
   signInWithEmailLink,
   signInWithPopup,
   signOut as firebaseSignOut,
@@ -21,6 +23,8 @@ interface AuthContextValue {
   loading: boolean
   magicLinkNeedsEmail: boolean
   signInWithGoogle: () => Promise<void>
+  signInWithPassword: (email: string, password: string) => Promise<void>
+  signUpWithPassword: (email: string, password: string) => Promise<void>
   sendMagicLink: (email: string, redirect?: string) => Promise<void>
   confirmMagicLinkEmail: (email: string) => Promise<void>
   signOut: () => Promise<void>
@@ -130,6 +134,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       magicLinkNeedsEmail,
       async signInWithGoogle() {
         await signInWithPopup(auth, new GoogleAuthProvider())
+      },
+      async signInWithPassword(email: string, password: string) {
+        await signInWithEmailAndPassword(auth, email, password)
+      },
+      async signUpWithPassword(email: string, password: string) {
+        await createUserWithEmailAndPassword(auth, email, password)
       },
       async sendMagicLink(email: string, redirect?: string) {
         const url = new URL(`${window.location.origin}/login`)
