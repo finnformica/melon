@@ -43,7 +43,7 @@ import { deltaColorClass, formatDelta } from '@/lib/format'
 import { recordGame, setGamePhoto } from '@/lib/firestore'
 import { recordGameInputSchema } from '@/lib/schemas'
 import type { RecordGameInput } from '@/lib/schemas'
-import { MAX_INPUT_BYTES, fileToCompressedDataUrl } from '@/lib/image'
+import { MAX_INPUT_BYTES, fileToWebpDataUrl } from '@/lib/image'
 
 type GameType = '1v1' | 'team'
 
@@ -225,7 +225,7 @@ export default function RecordGamePage() {
       let photoDataUrl: string | null = null
       if (photoFile) {
         try {
-          photoDataUrl = await fileToCompressedDataUrl(photoFile)
+          photoDataUrl = await fileToWebpDataUrl(photoFile)
         } catch (err) {
           toast.error(
             err instanceof Error
@@ -535,7 +535,7 @@ function TeamDeltaBlock({ title, rows }: { title: string; rows: TeamDelta[] }) {
   return (
     <div className="space-y-1">
       <p className="text-xs font-medium text-muted-foreground">{title}</p>
-      <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 gap-y-1 font-mono">
+      <div className="flex flex-col gap-1">
         {rows.map((r) => (
           <RatingRow key={r.uid} row={r} />
         ))}
@@ -546,14 +546,16 @@ function TeamDeltaBlock({ title, rows }: { title: string; rows: TeamDelta[] }) {
 
 function RatingRow({ row }: { row: TeamDelta }) {
   return (
-    <>
-      <span className="truncate text-muted-foreground">{row.name}</span>
-      <span className={deltaColorClass(row.globalBefore, row.globalAfter)}>
-        G {row.globalBefore}→{row.globalAfter} ({formatDelta(row.globalBefore, row.globalAfter)})
-      </span>
-      <span className={deltaColorClass(row.leagueBefore, row.leagueAfter)}>
-        L {row.leagueBefore}→{row.leagueAfter} ({formatDelta(row.leagueBefore, row.leagueAfter)})
-      </span>
-    </>
+    <div className="flex items-center justify-between gap-2">
+      <span className="truncate text-xs font-medium">{row.name}</span>
+      <div className="flex gap-3 font-mono text-xs">
+        <span className={deltaColorClass(row.globalBefore, row.globalAfter)}>
+          G {formatDelta(row.globalBefore, row.globalAfter)}
+        </span>
+        <span className={deltaColorClass(row.leagueBefore, row.leagueAfter)}>
+          L {formatDelta(row.leagueBefore, row.leagueAfter)}
+        </span>
+      </div>
+    </div>
   )
 }
