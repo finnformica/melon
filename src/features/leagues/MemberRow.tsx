@@ -103,16 +103,16 @@ export default function MemberRow({
   return (
     <>
       <TableRow>
-        <TableCell>
-          <div className="flex items-center gap-2">
-            <span>
+        <TableCell className="max-w-[140px] sm:max-w-[240px]">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="min-w-0 flex-1 truncate">
               {user?.displayName || user?.email || 'Unknown player'}
             </span>
             {targetRoleLabel === 'owner' && (
-              <Badge variant="secondary">Owner</Badge>
+              <Badge variant="secondary" className="shrink-0">Owner</Badge>
             )}
             {targetRoleLabel === 'admin' && (
-              <Badge variant="outline">Admin</Badge>
+              <Badge variant="outline" className="shrink-0">Admin</Badge>
             )}
           </div>
         </TableCell>

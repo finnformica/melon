@@ -79,10 +79,10 @@ export default function GlobalLeaderboardPage() {
                     <TableCell className="font-mono text-muted-foreground">
                       {idx + 1}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="max-w-[140px] sm:max-w-[240px]">
                       <Link
                         to={`/players/${user.uid}`}
-                        className="hover:underline"
+                        className="block truncate hover:underline"
                       >
                         {user.displayName || user.email || 'Unknown'}
                       </Link>
