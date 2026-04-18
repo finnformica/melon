@@ -1,102 +1,88 @@
-import { Timestamp } from 'firebase/firestore'
+import {
+  GoogleAuthProvider,
+  onAuthStateChanged,
+  signInWithPopup,
+  signOut as firebaseSignOut,
+} from 'firebase/auth'
+import type { User as FirebaseUser } from 'firebase/auth'
+import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore'
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 
+import { auth, db } from '@/lib/firebase'
 import type { User } from '@/types'
 
 interface AuthContextValue {
   user: User | null
+  firebaseUser: FirebaseUser | null
   loading: boolean
   signInWithGoogle: () => Promise<void>
-  signInWithGithub: () => Promise<void>
   signOut: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined)
 
-const STORAGE_KEY = 'elo-tracker-dev-session'
+async function ensureUserDocument(firebaseUser: FirebaseUser): Promise<User> {
+  const userRef = doc(db, 'users', firebaseUser.uid)
+  const snapshot = await getDoc(userRef)
 
-interface StoredSession {
-  uid: string
-  displayName: string
-  email: string
-  photoURL: string
-  createdAtMs: number
-  provider: 'google' | 'github'
-}
+  if (snapshot.exists()) {
+    return { uid: firebaseUser.uid, ...snapshot.data() } as User
+  }
 
-function sessionToUser(session: StoredSession): User {
-  return {
-    uid: session.uid,
-    displayName: session.displayName,
-    email: session.email,
-    photoURL: session.photoURL,
+  const newUser = {
+    displayName: firebaseUser.displayName ?? '',
+    photoURL: firebaseUser.photoURL ?? '',
+    email: firebaseUser.email ?? '',
     globalElo: 1000,
     globalWins: 0,
     globalLosses: 0,
-    createdAt: Timestamp.fromMillis(session.createdAtMs),
+    createdAt: serverTimestamp(),
   }
-}
 
-function readSession(): StoredSession | null {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return null
-    return JSON.parse(raw) as StoredSession
-  } catch {
-    return null
-  }
-}
-
-function writeSession(session: StoredSession) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(session))
-}
-
-function clearSession() {
-  localStorage.removeItem(STORAGE_KEY)
-}
-
-function createDevSession(provider: 'google' | 'github'): StoredSession {
-  return {
-    uid: `dev-${crypto.randomUUID()}`,
-    displayName: provider === 'google' ? 'Dev Google User' : 'Dev GitHub User',
-    email: `${provider}@example.com`,
-    photoURL: '',
-    createdAtMs: Date.now(),
-    provider,
-  }
+  await setDoc(userRef, newUser)
+  const created = await getDoc(userRef)
+  return { uid: firebaseUser.uid, ...created.data() } as User
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null)
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const session = readSession()
-    setUser(session ? sessionToUser(session) : null)
-    setLoading(false)
+    const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
+      setFirebaseUser(fbUser)
+      if (fbUser) {
+        try {
+          const appUser = await ensureUserDocument(fbUser)
+          setUser(appUser)
+        } catch (err) {
+          console.error('Failed to load user document', err)
+          setUser(null)
+        }
+      } else {
+        setUser(null)
+      }
+      setLoading(false)
+    })
+
+    return unsubscribe
   }, [])
 
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
+      firebaseUser,
       loading,
       async signInWithGoogle() {
-        const session = createDevSession('google')
-        writeSession(session)
-        setUser(sessionToUser(session))
-      },
-      async signInWithGithub() {
-        const session = createDevSession('github')
-        writeSession(session)
-        setUser(sessionToUser(session))
+        await signInWithPopup(auth, new GoogleAuthProvider())
       },
       async signOut() {
-        clearSession()
-        setUser(null)
+        await firebaseSignOut(auth)
       },
     }),
-    [user, loading],
+    [user, firebaseUser, loading],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

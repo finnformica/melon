@@ -1,0 +1,11 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Phase 2 placeholder: any signed-in user can read and write.
+    // Phase 4 replaces this with per-collection rules.
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
