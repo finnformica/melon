@@ -62,7 +62,8 @@ export function Sidebar({ className }: { className?: string }) {
         <button
           onClick={() => setLeaguesOpen(!leaguesOpen)}
           className={cn(
-            'flex w-full items-center gap-3 rounded-md px-2 py-2 text-sm transition-colors',
+            'flex w-full items-center gap-3 rounded-md py-2 text-sm transition-colors',
+            'justify-center px-0 lg:justify-start lg:px-2',
             'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
             isActive('/leagues') && 'bg-sidebar-accent text-sidebar-accent-foreground font-medium',
           )}
@@ -110,7 +111,8 @@ export function Sidebar({ className }: { className?: string }) {
         <Link
           to="/leaderboard"
           className={cn(
-            'flex items-center gap-3 rounded-md px-2 py-2 text-sm transition-colors',
+            'flex items-center gap-3 rounded-md py-2 text-sm transition-colors',
+            'justify-center px-0 lg:justify-start lg:px-2',
             'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
             isActive('/leaderboard') &&
               'bg-sidebar-accent text-sidebar-accent-foreground font-medium',
@@ -125,7 +127,7 @@ export function Sidebar({ className }: { className?: string }) {
       <div className="border-t border-sidebar-border p-2">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button className="flex w-full items-center gap-2.5 rounded-md px-2 py-2 transition-colors hover:bg-sidebar-accent">
+            <button className="flex w-full items-center gap-2.5 rounded-md py-2 transition-colors hover:bg-sidebar-accent justify-center px-0 lg:justify-start lg:px-2">
               <Avatar className="h-7 w-7 shrink-0">
                 <AvatarImage src={user?.photoURL || undefined} />
                 <AvatarFallback className="text-xs">

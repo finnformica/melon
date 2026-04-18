@@ -59,7 +59,20 @@ export default function LeagueDetailPage() {
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">{league.name}</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-semibold">{league.name}</h1>
+            {canManage && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-muted-foreground"
+                onClick={() => navigate(`/leagues/${league.id}/settings`)}
+                title="League settings"
+              >
+                <Settings className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
           <p className="text-sm text-muted-foreground">
             {SPORT_LABELS[league.sport as Sport] ?? league.sport}
           </p>
@@ -74,17 +87,6 @@ export default function LeagueDetailPage() {
             <Copy className="mr-2 h-4 w-4" />
             <code className="font-mono">{league.inviteCode}</code>
           </Button>
-          {canManage && (
-            <Button
-              variant="outline"
-              size="icon"
-              className="h-9 w-9"
-              onClick={() => navigate(`/leagues/${league.id}/settings`)}
-              title="League settings"
-            >
-              <Settings className="h-4 w-4" />
-            </Button>
-          )}
           <Button
             size="sm"
             onClick={() => navigate(`/leagues/${league.id}/record`)}

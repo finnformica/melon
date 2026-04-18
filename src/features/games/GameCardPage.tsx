@@ -25,6 +25,14 @@ function initials(name: string | undefined): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
 }
 
+// Defence-in-depth: never render something email-shaped on the public card,
+// even if an old doc slipped through without passing through publicDisplayName.
+function safeName(raw: string | undefined): string {
+  const value = (raw ?? '').trim()
+  if (!value || value.includes('@')) return 'Player'
+  return value
+}
+
 async function fetchGame(id: string): Promise<Game | null> {
   const snap = await getDoc(doc(db, 'games', id))
   if (!snap.exists()) return null
@@ -47,20 +55,19 @@ function PlayerPanel({
   badge: 'Winner' | 'Loser'
 }) {
   return (
-    <div className="flex flex-1 flex-col items-center gap-3 text-center">
+    <div className="flex min-w-0 flex-1 flex-col items-center gap-3 text-center">
       <Avatar className="h-20 w-20 text-xl">
         <AvatarFallback>{initials(name)}</AvatarFallback>
       </Avatar>
-      <div>
-        <p className="text-lg font-semibold">{name}</p>
-        <Badge
-          variant={badge === 'Winner' ? 'default' : 'secondary'}
-          className="mt-1"
-        >
+      <div className="flex w-full flex-col items-center gap-1.5">
+        <p className="w-full truncate text-xl font-semibold text-foreground">
+          {name}
+        </p>
+        <Badge variant={badge === 'Winner' ? 'default' : 'secondary'}>
           {badge}
         </Badge>
       </div>
-      <div className="space-y-1 text-sm">
+      <div className="w-full space-y-1 text-sm">
         <div className="flex items-center justify-center gap-2 font-mono">
           <span className="text-muted-foreground">League</span>
           <span>{leagueEloAfter}</span>
@@ -91,19 +98,11 @@ export default function GameCardPage() {
 
   async function share() {
     if (typeof window === 'undefined') return
-    const url = window.location.href
-    const winnerName = game?.winnerDisplayName ?? 'Player'
-    const loserName = game?.loserDisplayName ?? 'Player'
-    const text = `${winnerName} defeated ${loserName}`
     try {
-      if (navigator.share) {
-        await navigator.share({ title: 'Melon game result', text, url })
-      } else {
-        await navigator.clipboard.writeText(url)
-        toast.success('Link copied')
-      }
+      await navigator.clipboard.writeText(window.location.href)
+      toast.success('Link copied')
     } catch {
-      // user cancelled
+      toast.error('Could not copy link')
     }
   }
 
@@ -130,8 +129,8 @@ export default function GameCardPage() {
     )
   }
 
-  const winnerName = game.winnerDisplayName || 'Player'
-  const loserName = game.loserDisplayName || 'Player'
+  const winnerName = safeName(game.winnerDisplayName)
+  const loserName = safeName(game.loserDisplayName)
   const leagueName = game.leagueName || 'Melon league'
   const sportLabel = game.sport
     ? (SPORT_LABELS[game.sport as Sport] ?? game.sport)

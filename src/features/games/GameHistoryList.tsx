@@ -61,16 +61,11 @@ export default function GameHistoryList({ leagueId }: { leagueId: string }) {
 
   async function share(game: Game) {
     const url = `${window.location.origin}/g/${game.id}`
-    const text = `${displayName(game.winnerId)} defeated ${displayName(game.loserId)}`
     try {
-      if (navigator.share) {
-        await navigator.share({ title: 'Melon game result', text, url })
-      } else {
-        await navigator.clipboard.writeText(url)
-        toast.success('Link copied')
-      }
+      await navigator.clipboard.writeText(url)
+      toast.success('Link copied')
     } catch {
-      // user cancelled
+      toast.error('Could not copy link')
     }
   }
 

@@ -50,7 +50,10 @@ async function ensureUserDocument(firebaseUser: FirebaseUser): Promise<User> {
   }
 
   const newUser = {
-    displayName: firebaseUser.displayName ?? firebaseUser.email ?? '',
+    // Keep displayName empty when Auth didn't give us one — the in-app UI
+    // falls back to email at render time, but the public share card must
+    // not leak emails, so we avoid storing email-as-displayName.
+    displayName: firebaseUser.displayName ?? '',
     photoURL: firebaseUser.photoURL ?? '',
     email: firebaseUser.email ?? '',
     globalElo: 1000,

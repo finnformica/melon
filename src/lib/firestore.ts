@@ -38,6 +38,16 @@ export function membershipId(leagueId: string, userId: string): string {
   return `${leagueId}_${userId}`
 }
 
+// Returns a name that's safe to render on the public share card.
+// Rejects anything that looks like an email so legacy docs (where email
+// was used as a fallback displayName) don't leak PII.
+function publicDisplayName(raw: string | undefined): string {
+  const value = (raw ?? '').trim()
+  if (!value) return 'Player'
+  if (value.includes('@')) return 'Player'
+  return value
+}
+
 export async function getUser(uid: string): Promise<User | null> {
   const snap = await getDoc(doc(db, 'users', uid))
   if (!snap.exists()) return null
@@ -239,8 +249,8 @@ export async function recordGame(input: RecordGameInput): Promise<string> {
       playedAt: serverTimestamp(),
       leagueName,
       sport,
-      winnerDisplayName: winnerUser.displayName || 'Player',
-      loserDisplayName: loserUser.displayName || 'Player',
+      winnerDisplayName: publicDisplayName(winnerUser.displayName),
+      loserDisplayName: publicDisplayName(loserUser.displayName),
     })
 
     tx.update(winnerUserRef, {
