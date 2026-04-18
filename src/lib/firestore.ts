@@ -56,6 +56,13 @@ export async function getUser(uid: string): Promise<User | null> {
   return { uid, ...snap.data() } as User
 }
 
+export async function updateUserProfile(
+  uid: string,
+  updates: { displayName?: string; photoURL?: string },
+): Promise<void> {
+  await updateDoc(doc(db, 'users', uid), updates)
+}
+
 export async function getLeague(leagueId: string): Promise<League | null> {
   const snap = await getDoc(doc(db, 'leagues', leagueId))
   if (!snap.exists()) return null
