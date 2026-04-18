@@ -43,7 +43,7 @@ import { deltaColorClass, formatDelta } from '@/lib/format'
 import { recordGame, setGamePhoto } from '@/lib/firestore'
 import { recordGameInputSchema } from '@/lib/schemas'
 import type { RecordGameInput } from '@/lib/schemas'
-import { PHOTO_MAX_BYTES, uploadGamePhoto } from '@/lib/storage'
+import { MAX_INPUT_BYTES, fileToWebpDataUrl } from '@/lib/image'
 
 type GameType = '1v1' | 'team'
 
@@ -201,8 +201,8 @@ export default function RecordGamePage() {
   function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0] ?? null
     if (!file) return
-    if (file.size > PHOTO_MAX_BYTES) {
-      toast.error('Photo must be 5 MB or smaller')
+    if (file.size > MAX_INPUT_BYTES) {
+      toast.error('Photo is too large (max 15 MB)')
       e.target.value = ''
       return
     }
@@ -222,16 +222,30 @@ export default function RecordGamePage() {
   async function onConfirmedSubmit(data: RecordGameInput) {
     setSubmitting(true)
     try {
-      const gameId = await recordGame(data)
+      let photoDataUrl: string | null = null
       if (photoFile) {
         try {
-          const url = await uploadGamePhoto(photoFile, data.leagueId, gameId)
-          await setGamePhoto(gameId, url)
+          photoDataUrl = await fileToWebpDataUrl(photoFile)
         } catch (err) {
           toast.error(
             err instanceof Error
-              ? `Game recorded, but photo upload failed: ${err.message}`
-              : 'Game recorded, but photo upload failed',
+              ? `Photo rejected: ${err.message}`
+              : 'Could not process photo',
+          )
+          setSubmitting(false)
+          setConfirmOpen(false)
+          return
+        }
+      }
+      const gameId = await recordGame(data)
+      if (photoDataUrl) {
+        try {
+          await setGamePhoto(gameId, photoDataUrl)
+        } catch (err) {
+          toast.error(
+            err instanceof Error
+              ? `Game recorded, but photo save failed: ${err.message}`
+              : 'Game recorded, but photo save failed',
           )
         }
       }
@@ -375,7 +389,7 @@ export default function RecordGamePage() {
                 onChange={handlePhotoChange}
               />
               <p className="text-xs text-muted-foreground">
-                JPG, PNG or WEBP. Max 5 MB.
+                JPG, PNG or WEBP. Auto-resized and compressed before saving.
               </p>
             </div>
 

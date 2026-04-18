@@ -229,14 +229,19 @@ Access via `import.meta.env.VITE_FIREBASE_*`.
 - Game `photoUrl` may be patched post-create by a participant; no other field may change
 - `playerElo` may be rewritten by a participant or league admin/owner only during `deleteGame` recomputes
 
-## Firebase Storage
+## Game photos (inline WebP)
 
-Game photos live at `games/{leagueId}/{gameId}/photo.{ext}`. See
-`storage.rules`. Reads require a league membership; writes require the caller
-to be a participant of the referenced game, with a 5 MB + `image/*` cap.
-Upload flow: `recordGame` writes the game doc first (getting a `gameId`), then
-`uploadGamePhoto` uploads using that path, then `setGamePhoto` patches the
-`photoUrl` back onto the doc.
+Game photos are stored inline as a WebP `data:` URL in the game doc's
+`photoUrl` field — **not** Firebase Storage. The client resizes (longest edge
+≤ 1280 px) and re-encodes via `<canvas>.toDataURL('image/webp', q)` in
+`src/lib/image.ts`, stepping down through quality tiers until the encoded
+string fits inside the `MAX_PHOTO_BYTES` budget (~700 KB) that leaves room
+for the rest of the Firestore doc (1 MiB cap).
+
+Flow: `recordGame` writes the game doc first (getting a `gameId`); if the
+user attached a photo, the form encodes it to WebP and then `setGamePhoto`
+patches `photoUrl` onto the doc. `<img src={photoUrl}>` renders data URLs
+natively, so consumer components don't care where the bytes came from.
 
 ---
 
@@ -244,7 +249,7 @@ Upload flow: `recordGame` writes the game doc first (getting a `gameId`), then
 
 - No backend / Cloud Functions / API routes
 - No email/password auth — social login only
-- No avatars beyond Firebase Auth photoURL (game photos are an intentional exception — see Firebase Storage section)
+- No avatars beyond Firebase Auth photoURL (game photos are an intentional exception, stored inline on the game doc — see Game photos section)
 - No payments or subscriptions
 - No push notifications
 - No admin panel
