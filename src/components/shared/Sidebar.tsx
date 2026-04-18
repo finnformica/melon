@@ -74,23 +74,33 @@ export function Sidebar({ className }: { className?: string }) {
           <span className="hidden lg:block">Home</span>
         </Link>
 
-        <button
-          onClick={() => setLeaguesOpen(!leaguesOpen)}
+        <div
           className={cn(
-            'flex w-full items-center gap-3 rounded-md py-2 text-sm transition-colors',
-            'justify-center px-0 lg:justify-start lg:px-2',
+            'flex w-full items-center rounded-md text-sm transition-colors',
             'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
             isActive('/leagues') && 'bg-sidebar-accent text-sidebar-accent-foreground font-medium',
           )}
         >
-          <LayoutGrid className="h-4 w-4 shrink-0" />
-          <span className="hidden flex-1 text-left lg:block">Leagues</span>
-          {leaguesOpen ? (
-            <ChevronDown className="hidden h-3 w-3 lg:block" />
-          ) : (
-            <ChevronRight className="hidden h-3 w-3 lg:block" />
-          )}
-        </button>
+          <Link
+            to="/leagues"
+            className="flex flex-1 items-center gap-3 rounded-md py-2 justify-center px-0 lg:justify-start lg:px-2"
+          >
+            <LayoutGrid className="h-4 w-4 shrink-0" />
+            <span className="hidden flex-1 text-left lg:block">Leagues</span>
+          </Link>
+          <button
+            type="button"
+            onClick={() => setLeaguesOpen(!leaguesOpen)}
+            aria-label={leaguesOpen ? 'Collapse leagues' : 'Expand leagues'}
+            className="hidden h-8 w-6 items-center justify-center rounded-md transition-colors hover:bg-sidebar-accent/60 lg:flex"
+          >
+            {leaguesOpen ? (
+              <ChevronDown className="h-3 w-3" />
+            ) : (
+              <ChevronRight className="h-3 w-3" />
+            )}
+          </button>
+        </div>
 
         {leaguesOpen && (
           <div className="hidden lg:flex lg:flex-col lg:gap-0.5 lg:pl-6">

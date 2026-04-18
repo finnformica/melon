@@ -1,4 +1,4 @@
-import { Home, User } from 'lucide-react'
+import { Home, LayoutGrid, Trophy, User } from 'lucide-react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 
 import { useAuth } from '@/features/auth/AuthProvider'
@@ -11,6 +11,8 @@ export function MobileBottomNav() {
   const navigate = useNavigate()
 
   const isHome = location.pathname === '/'
+  const isLeagues = location.pathname.startsWith('/leagues')
+  const isLeaderboard = location.pathname.startsWith('/leaderboard')
   const isProfile = location.pathname.startsWith('/players')
 
   return (
@@ -26,9 +28,31 @@ export function MobileBottomNav() {
         <span>Home</span>
       </Link>
 
+      <Link
+        to="/leagues"
+        className={cn(
+          'flex flex-1 flex-col items-center justify-center gap-0.5 text-xs transition-colors',
+          isLeagues ? 'text-primary' : 'text-sidebar-foreground',
+        )}
+      >
+        <LayoutGrid className="h-5 w-5" />
+        <span>Leagues</span>
+      </Link>
+
       <div className="flex flex-1 items-center justify-center">
         <RecordGameFab />
       </div>
+
+      <Link
+        to="/leaderboard"
+        className={cn(
+          'flex flex-1 flex-col items-center justify-center gap-0.5 text-xs transition-colors',
+          isLeaderboard ? 'text-primary' : 'text-sidebar-foreground',
+        )}
+      >
+        <Trophy className="h-5 w-5" />
+        <span>Global</span>
+      </Link>
 
       {user && (
         <button
