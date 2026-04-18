@@ -141,6 +141,13 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['playerElo']);
 
+      // NPC replacement: admins/owners can swap NPC slots for real players.
+      // winnerIds, loserIds, playerElo and displayNames may change together.
+      allow update: if signedIn()
+        && isLeagueAdminOrOwner(resource.data.leagueId)
+        && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['winnerIds', 'loserIds', 'playerElo', 'displayNames']);
+
       // Any participant or league admin/owner may delete.
       allow delete: if signedIn() && (
         request.auth.uid in resource.data.winnerIds
