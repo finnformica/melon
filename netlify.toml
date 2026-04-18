@@ -2,6 +2,14 @@
   command = "npm run build"
   publish = "dist"
 
+# Firebase web config values (API key, project ID, etc.) are public by
+# design — they ship in the client bundle and are visible in DevTools on
+# any Firebase-using site. Access control is enforced by Firestore rules
+# and Authorised domains, not by keeping these strings private. Tell the
+# Netlify secrets scanner to ignore them so the build passes.
+[build.environment]
+  SECRETS_SCAN_OMIT_KEYS = "VITE_FIREBASE_API_KEY,VITE_FIREBASE_AUTH_DOMAIN,VITE_FIREBASE_PROJECT_ID,VITE_FIREBASE_STORAGE_BUCKET,VITE_FIREBASE_MESSAGING_SENDER_ID,VITE_FIREBASE_APP_ID"
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
