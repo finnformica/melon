@@ -2,10 +2,88 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Phase 2 placeholder: any signed-in user can read and write.
-    // Phase 4 replaces this with per-collection rules.
-    match /{document=**} {
-      allow read, write: if request.auth != null;
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isLeagueMember(leagueId) {
+      return exists(
+        /databases/$(database)/documents/memberships/$(leagueId + '_' + request.auth.uid)
+      );
+    }
+
+    match /users/{uid} {
+      allow read: if signedIn();
+
+      // First sign-in creates the doc with starting ELO.
+      allow create: if signedIn()
+        && request.auth.uid == uid
+        && request.resource.data.globalElo == 1000
+        && request.resource.data.globalWins == 0
+        && request.resource.data.globalLosses == 0;
+
+      // Own user can update their profile; other signed-in users can only touch ELO/W/L
+      // (this is how recordGame updates the opposite player's global rating).
+      allow update: if signedIn() && (
+        request.auth.uid == uid
+        || request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['globalElo', 'globalWins', 'globalLosses'])
+      );
+
+      allow delete: if false;
+    }
+
+    match /leagues/{leagueId} {
+      allow read: if signedIn();
+
+      allow create: if signedIn()
+        && request.resource.data.ownerId == request.auth.uid;
+
+      allow update: if signedIn()
+        && resource.data.ownerId == request.auth.uid
+        && request.resource.data.ownerId == resource.data.ownerId;
+
+      allow delete: if signedIn()
+        && resource.data.ownerId == request.auth.uid;
+    }
+
+    match /memberships/{membershipId} {
+      allow read: if signedIn();
+
+      // Composite ID enforces uniqueness and prevents impersonation.
+      // New membership must start at the initial rating.
+      allow create: if signedIn()
+        && request.resource.data.userId == request.auth.uid
+        && membershipId == request.resource.data.leagueId + '_' + request.auth.uid
+        && request.resource.data.leagueElo == 1000
+        && request.resource.data.leagueWins == 0
+        && request.resource.data.leagueLosses == 0;
+
+      // Any member of the league can update ELO/W/L fields (needed during recordGame).
+      allow update: if signedIn()
+        && isLeagueMember(resource.data.leagueId)
+        && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['leagueElo', 'leagueWins', 'leagueLosses']);
+
+      // Own membership (leave) or league owner (kick).
+      allow delete: if signedIn() && (
+        resource.data.userId == request.auth.uid
+        || get(/databases/$(database)/documents/leagues/$(resource.data.leagueId)).data.ownerId == request.auth.uid
+      );
+    }
+
+    match /games/{gameId} {
+      allow read: if signedIn();
+
+      // Caller must be in the league; both players must also be members.
+      allow create: if signedIn()
+        && isLeagueMember(request.resource.data.leagueId)
+        && exists(/databases/$(database)/documents/memberships/$(request.resource.data.leagueId + '_' + request.resource.data.winnerId))
+        && exists(/databases/$(database)/documents/memberships/$(request.resource.data.leagueId + '_' + request.resource.data.loserId));
+
+      // Immutable audit log.
+      allow update, delete: if false;
     }
   }
 }
