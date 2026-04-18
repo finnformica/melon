@@ -48,7 +48,7 @@ import { useAuth } from '@/features/auth/AuthProvider'
 import { useGames } from '@/hooks/useGames'
 import { useLeagueRole } from '@/hooks/useLeagueRole'
 import { useMembers } from '@/hooks/useMembers'
-import { deleteGame, replaceNpcWithPlayer } from '@/lib/firestore'
+import { deleteGame, replaceNpcAndRecalculate } from '@/lib/firestore'
 import { deltaColorClass, formatDelta } from '@/lib/format'
 import { isNpcId } from '@/lib/npc'
 import type { Game } from '@/types'
@@ -81,6 +81,11 @@ export default function GameHistoryList({ leagueId }: { leagueId: string }) {
     return game.winnerIds.includes(user.uid) || game.loserIds.includes(user.uid)
   }
 
+  const canEdit = (): boolean => {
+    if (!user) return false
+    return role === 'owner' || role === 'admin'
+  }
+
   async function share(game: Game) {
     const url = `${window.location.origin}/g/${game.id}`
     try {
@@ -109,7 +114,7 @@ export default function GameHistoryList({ leagueId }: { leagueId: string }) {
     if (!replacingNpc || !replaceTarget) return
     setReplacing(true)
     try {
-      await replaceNpcWithPlayer(replacingNpc.game.id, replacingNpc.npcId, replaceTarget)
+      await replaceNpcAndRecalculate(replacingNpc.game.id, replacingNpc.npcId, replaceTarget)
       toast.success('NPC replaced with player')
       // Refresh the selected game view if open
       setSelectedGame(null)
@@ -284,7 +289,7 @@ export default function GameHistoryList({ leagueId }: { leagueId: string }) {
                           <span className={`truncate text-xs font-medium${isWinner ? '' : ' text-muted-foreground'}`}>
                             {displayName(uid)}
                           </span>
-                          {isNpcId(uid) && canDelete(selectedGame) && (
+                          {isNpcId(uid) && canEdit() && (
                             <Button
                               variant="ghost"
                               size="sm"
@@ -336,9 +341,9 @@ export default function GameHistoryList({ leagueId }: { leagueId: string }) {
           <DialogHeader>
             <DialogTitle>Replace NPC with a player</DialogTitle>
             <DialogDescription>
-              Choose a league member to take this NPC&apos;s spot. The original
-              ELO snapshot (900) will be attributed to them — no recalculation
-              is performed.
+              Choose a league member to take this NPC&apos;s spot. All league
+              ELOs will be recalculated from scratch, and global ELO will be
+              adjusted for this game.
             </DialogDescription>
           </DialogHeader>
           <Select value={replaceTarget} onValueChange={setReplaceTarget}>
