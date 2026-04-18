@@ -547,6 +547,206 @@ export async function deleteGame(gameId: string): Promise<void> {
   await batch.commit()
 }
 
+// Replaces an NPC slot with a real league member and fully recomputes league
+// ELO for all subsequent games. Global ELO is adjusted for the target game
+// only: original deltas are reversed and new deltas applied using participants'
+// stored globalBefore values (or current globalElo for the newly-added player).
+export async function replaceNpcAndRecalculate(
+  gameId: string,
+  npcId: string,
+  realPlayerId: string,
+): Promise<void> {
+  if (!isNpcId(npcId)) throw new Error('Not an NPC slot')
+
+  const gameSnap = await getDoc(doc(db, 'games', gameId))
+  if (!gameSnap.exists()) throw new Error('Game not found')
+  const game = normalizeGame({ id: gameId, ...gameSnap.data() })
+
+  if (!game.winnerIds.includes(npcId) && !game.loserIds.includes(npcId)) {
+    throw new Error('NPC slot not found in this game')
+  }
+  const existingRealIds = [...game.winnerIds, ...game.loserIds].filter((id) => !isNpcId(id))
+  if (existingRealIds.includes(realPlayerId)) {
+    throw new Error('Player is already in this game')
+  }
+
+  const [allGamesSnap, membershipsSnap, memberSnap, userSnap] = await Promise.all([
+    getDocs(query(
+      collection(db, 'games'),
+      where('leagueId', '==', game.leagueId),
+      orderBy('playedAt', 'desc'),
+    )),
+    getDocs(query(collection(db, 'memberships'), where('leagueId', '==', game.leagueId))),
+    getDoc(doc(db, 'memberships', membershipId(game.leagueId, realPlayerId))),
+    getDoc(doc(db, 'users', realPlayerId)),
+  ])
+
+  if (!memberSnap.exists()) throw new Error('Player must be a member of this league')
+  if (!userSnap.exists()) throw new Error('Player has no user document')
+
+  const realPlayerGlobalElo = (userSnap.data() as User).globalElo
+  const realPlayerDisplayName = publicDisplayName((userSnap.data() as User).displayName)
+
+  const npcOnWinnerSide = game.winnerIds.includes(npcId)
+  const modifiedWinnerIds = game.winnerIds.map((id) => (id === npcId ? realPlayerId : id))
+  const modifiedLoserIds = game.loserIds.map((id) => (id === npcId ? realPlayerId : id))
+
+  const allGames: Game[] = allGamesSnap.docs
+    .map((d) => normalizeGame({ id: d.id, ...d.data() }))
+    .reverse() // chronological order
+
+  if (allGames.length > 200) {
+    throw new Error('This league has too many games to recompute in one pass.')
+  }
+
+  // --- League ELO: full recompute from scratch ---
+  const currentMemberUids = new Set(
+    membershipsSnap.docs.map((d) => (d.data() as Membership).userId),
+  )
+  currentMemberUids.add(realPlayerId)
+
+  const leagueElo = new Map<string, number>()
+  const leagueWins = new Map<string, number>()
+  const leagueLosses = new Map<string, number>()
+  for (const uid of currentMemberUids) {
+    leagueElo.set(uid, 1000)
+    leagueWins.set(uid, 0)
+    leagueLosses.set(uid, 0)
+  }
+
+  // --- Global ELO: adjustment for the target game only ---
+  // Use stored globalBefore for existing players; current globalElo for the new player.
+  const origWinnerGlobal = game.winnerIds.map((uid) =>
+    isNpcId(uid) ? NPC_ELO : (game.playerElo[uid]?.globalBefore ?? 1000),
+  )
+  const origLoserGlobal = game.loserIds.map((uid) =>
+    isNpcId(uid) ? NPC_ELO : (game.playerElo[uid]?.globalBefore ?? 1000),
+  )
+  const newWinnerGlobal = modifiedWinnerIds.map((uid) =>
+    isNpcId(uid) ? NPC_ELO : uid === realPlayerId ? realPlayerGlobalElo : (game.playerElo[uid]?.globalBefore ?? 1000),
+  )
+  const newLoserGlobal = modifiedLoserIds.map((uid) =>
+    isNpcId(uid) ? NPC_ELO : uid === realPlayerId ? realPlayerGlobalElo : (game.playerElo[uid]?.globalBefore ?? 1000),
+  )
+
+  const origGlobal = calculateTeamElo(origWinnerGlobal, origLoserGlobal, K_GLOBAL)
+  const newGlobal = calculateTeamElo(newWinnerGlobal, newLoserGlobal, K_GLOBAL)
+
+  // Build per-user global ELO increments
+  const globalInc = new Map<string, { elo: number; wins: number; losses: number }>()
+  for (const uid of game.winnerIds) {
+    if (isNpcId(uid)) continue
+    globalInc.set(uid, { elo: newGlobal.winnerDelta - origGlobal.winnerDelta, wins: 0, losses: 0 })
+  }
+  for (const uid of game.loserIds) {
+    if (isNpcId(uid)) continue
+    globalInc.set(uid, { elo: newGlobal.loserDelta - origGlobal.loserDelta, wins: 0, losses: 0 })
+  }
+  globalInc.set(realPlayerId, {
+    elo: npcOnWinnerSide ? newGlobal.winnerDelta : newGlobal.loserDelta,
+    wins: npcOnWinnerSide ? 1 : 0,
+    losses: npcOnWinnerSide ? 0 : 1,
+  })
+
+  const snapshotUpdates: Array<{ id: string; playerElo: Record<string, PlayerEloSnapshot> }> = []
+
+  for (const g of allGames) {
+    const wIds = g.id === gameId ? modifiedWinnerIds : g.winnerIds
+    const lIds = g.id === gameId ? modifiedLoserIds : g.loserIds
+
+    const wLeague = wIds.map((uid) => isNpcId(uid) ? NPC_ELO : (leagueElo.get(uid) ?? 1000))
+    const lLeague = lIds.map((uid) => isNpcId(uid) ? NPC_ELO : (leagueElo.get(uid) ?? 1000))
+    const { winnerDelta, loserDelta } = calculateTeamElo(wLeague, lLeague, K_LEAGUE)
+
+    const newPlayerElo: Record<string, PlayerEloSnapshot> = {}
+
+    for (const uid of wIds) {
+      if (isNpcId(uid)) {
+        newPlayerElo[uid] = { globalBefore: NPC_ELO, globalAfter: NPC_ELO, leagueBefore: NPC_ELO, leagueAfter: NPC_ELO }
+        continue
+      }
+      const lBefore = leagueElo.get(uid) ?? 1000
+      const lAfter = lBefore + winnerDelta
+      let gBefore: number
+      let gAfter: number
+      if (g.id === gameId) {
+        const idx = modifiedWinnerIds.indexOf(uid)
+        gBefore = newWinnerGlobal[idx]
+        gAfter = gBefore + newGlobal.winnerDelta
+      } else {
+        const ex = g.playerElo[uid]
+        gBefore = ex?.globalBefore ?? 0
+        gAfter = ex?.globalAfter ?? 0
+      }
+      newPlayerElo[uid] = { globalBefore: gBefore, globalAfter: gAfter, leagueBefore: lBefore, leagueAfter: lAfter }
+      leagueElo.set(uid, lAfter)
+      leagueWins.set(uid, (leagueWins.get(uid) ?? 0) + 1)
+    }
+
+    for (const uid of lIds) {
+      if (isNpcId(uid)) {
+        newPlayerElo[uid] = { globalBefore: NPC_ELO, globalAfter: NPC_ELO, leagueBefore: NPC_ELO, leagueAfter: NPC_ELO }
+        continue
+      }
+      const lBefore = leagueElo.get(uid) ?? 1000
+      const lAfter = lBefore + loserDelta
+      let gBefore: number
+      let gAfter: number
+      if (g.id === gameId) {
+        const idx = modifiedLoserIds.indexOf(uid)
+        gBefore = newLoserGlobal[idx]
+        gAfter = gBefore + newGlobal.loserDelta
+      } else {
+        const ex = g.playerElo[uid]
+        gBefore = ex?.globalBefore ?? 0
+        gAfter = ex?.globalAfter ?? 0
+      }
+      newPlayerElo[uid] = { globalBefore: gBefore, globalAfter: gAfter, leagueBefore: lBefore, leagueAfter: lAfter }
+      leagueElo.set(uid, lAfter)
+      leagueLosses.set(uid, (leagueLosses.get(uid) ?? 0) + 1)
+    }
+
+    snapshotUpdates.push({ id: g.id, playerElo: newPlayerElo })
+  }
+
+  const newDisplayNames: Record<string, string> = { ...(game.displayNames ?? {}) }
+  newDisplayNames[realPlayerId] = realPlayerDisplayName
+  delete newDisplayNames[npcId]
+
+  const batch = writeBatch(db)
+
+  for (const uid of currentMemberUids) {
+    batch.update(doc(db, 'memberships', membershipId(game.leagueId, uid)), {
+      leagueElo: leagueElo.get(uid) ?? 1000,
+      leagueWins: leagueWins.get(uid) ?? 0,
+      leagueLosses: leagueLosses.get(uid) ?? 0,
+    })
+  }
+
+  for (const upd of snapshotUpdates) {
+    if (upd.id === gameId) {
+      batch.update(doc(db, 'games', upd.id), {
+        winnerIds: modifiedWinnerIds,
+        loserIds: modifiedLoserIds,
+        playerElo: upd.playerElo,
+        displayNames: newDisplayNames,
+      })
+    } else {
+      batch.update(doc(db, 'games', upd.id), { playerElo: upd.playerElo })
+    }
+  }
+
+  for (const [uid, { elo, wins, losses }] of globalInc) {
+    const update: Record<string, ReturnType<typeof increment>> = {}
+    if (elo !== 0) update.globalElo = increment(elo)
+    if (wins !== 0) update.globalWins = increment(wins)
+    if (losses !== 0) update.globalLosses = increment(losses)
+    if (Object.keys(update).length > 0) batch.update(doc(db, 'users', uid), update)
+  }
+
+  await batch.commit()
+}
+
 // Replaces an NPC slot in an existing game with a real league member.
 // The original ELO snapshot (recorded at 900) is preserved and attributed
 // to the real player — no ELO recompute is performed.
