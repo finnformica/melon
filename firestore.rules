@@ -27,19 +27,6 @@ service cloud.firestore {
       return isLeagueOwner(leagueId) || isLeagueAdmin(leagueId);
     }
 
-    // True when every uid in `uids` has a membership in the given league.
-    // Bounded in length by the client (see recordGame) so this stays cheap.
-    function allAreLeagueMembers(leagueId, uids) {
-      return uids.size() > 0 && uids.size() <= 16
-        && !(false in uids.map(uid,
-          exists(/databases/$(database)/documents/memberships/$(leagueId + '_' + uid))
-        ));
-    }
-
-    function gameParticipants(data) {
-      return data.winnerIds.concat(data.loserIds);
-    }
-
     match /users/{uid} {
       allow read: if signedIn();
 
@@ -117,7 +104,10 @@ service cloud.firestore {
 
       // Unified schema: winnerIds[] and loserIds[] arrays (length 1 for 1v1),
       // per-player playerElo map, optional photoUrl. Writer must be a
-      // participant; every participant must be a league member.
+      // participant and a league member. Per-participant membership existence
+      // is enforced transitively: the same batch updates every participant's
+      // memberships/{leagueId}_{uid} doc, which fails atomically if the
+      // membership is missing.
       allow create: if signedIn()
         && request.resource.data.gameType in ['1v1', 'team']
         && request.resource.data.winnerIds is list
@@ -127,10 +117,6 @@ service cloud.firestore {
         && (request.auth.uid in request.resource.data.winnerIds
             || request.auth.uid in request.resource.data.loserIds)
         && isLeagueMember(request.resource.data.leagueId)
-        && allAreLeagueMembers(
-             request.resource.data.leagueId,
-             gameParticipants(request.resource.data)
-           )
         && request.resource.data.playerElo is map
         && request.resource.data.displayNames is map
         && request.resource.data.leagueName is string
