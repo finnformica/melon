@@ -24,7 +24,8 @@ export default function LeagueDetailPage() {
   const { data: league, isLoading } = useLeague(leagueId)
 
   const gamesMatch = useMatch('/leagues/:leagueId/games')
-  const tab = gamesMatch ? 'games' : 'standings'
+  const membersMatch = useMatch('/leagues/:leagueId/members')
+  const tab = gamesMatch ? 'games' : membersMatch ? 'members' : 'standings'
 
   function copyInviteLink() {
     if (!league) return
@@ -81,13 +82,12 @@ export default function LeagueDetailPage() {
 
       <Tabs
         value={tab}
-        onValueChange={(value) =>
-          navigate(
-            value === 'games'
-              ? `/leagues/${league.id}/games`
-              : `/leagues/${league.id}`,
-          )
-        }
+        onValueChange={(value) => {
+          const base = `/leagues/${league.id}`
+          if (value === 'games') navigate(`${base}/games`)
+          else if (value === 'members') navigate(`${base}/members`)
+          else navigate(base)
+        }}
       >
         <TabsList>
           <TabsTrigger value="standings">Standings</TabsTrigger>
