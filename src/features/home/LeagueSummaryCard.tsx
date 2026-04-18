@@ -1,6 +1,7 @@
 import { formatDistanceToNow } from 'date-fns'
-import { ChevronRight, Trophy } from 'lucide-react'
+import { Award, ChevronRight, Crown, Trophy } from 'lucide-react'
 import { useMemo } from 'react'
+import type React from 'react'
 import { Link } from 'react-router-dom'
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -131,16 +132,14 @@ export function LeagueSummaryCard({
               <Skeleton className="h-16 w-full" />
             ) : top3.length > 0 ? (
               top3.map((m, i) => {
-                const medalClass = [
-                  'bg-yellow-400/20 text-yellow-600 dark:text-yellow-400',
-                  'bg-slate-200/60 text-slate-500 dark:text-slate-400',
-                  'bg-orange-400/20 text-orange-600 dark:text-orange-500',
-                ][i]
+                const [Icon, iconClass] = [
+                  [Crown, 'text-yellow-500 dark:text-yellow-400'],
+                  [Trophy, 'text-slate-400 dark:text-slate-300'],
+                  [Award, 'text-orange-600 dark:text-orange-500'],
+                ][i] as [React.ElementType, string]
                 return (
                   <div key={m.membership.userId} className="flex items-center gap-2 text-sm">
-                    <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${medalClass}`}>
-                      {i + 1}
-                    </span>
+                    <Icon className={`h-4 w-4 shrink-0 ${iconClass}`} />
                     <Avatar size="sm">
                       <AvatarImage src={m.user?.photoURL || undefined} />
                       <AvatarFallback>{initials(name(m))}</AvatarFallback>
