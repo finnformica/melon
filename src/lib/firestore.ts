@@ -170,6 +170,15 @@ export async function recordGame(input: RecordGameInput): Promise<string> {
     throw new Error('Winner and loser must be different players')
   }
 
+  // Denormalised league info for the public share card. Read outside the
+  // transaction — league name / sport are rarely edited and strict atomicity
+  // with the ELO update isn't required here.
+  const leagueSnap = await getDoc(doc(db, 'leagues', input.leagueId))
+  if (!leagueSnap.exists()) throw new Error('League not found')
+  const leagueData = leagueSnap.data()
+  const leagueName = (leagueData.name as string) ?? ''
+  const sport = (leagueData.sport as string) ?? ''
+
   const winnerUserRef = doc(db, 'users', input.winnerId)
   const loserUserRef = doc(db, 'users', input.loserId)
   const winnerMembershipRef = doc(
@@ -228,6 +237,10 @@ export async function recordGame(input: RecordGameInput): Promise<string> {
       kFactorGlobal: K_GLOBAL,
       kFactorLeague: K_LEAGUE,
       playedAt: serverTimestamp(),
+      leagueName,
+      sport,
+      winnerDisplayName: winnerUser.displayName || 'Player',
+      loserDisplayName: loserUser.displayName || 'Player',
     })
 
     tx.update(winnerUserRef, {
@@ -315,6 +328,123 @@ export async function removeMember(
   uid: string,
 ): Promise<void> {
   await deleteDoc(doc(db, 'memberships', membershipId(leagueId, uid)))
+}
+
+// Recomputes every game in the league from scratch after removing the target
+// game, rewrites each game's league-ELO snapshots, and writes final standings
+// back to all current memberships. Global ELO is corrected by simple delta
+// reversal on the two involved players (no cross-league recompute).
+export async function deleteGame(gameId: string): Promise<void> {
+  const gameRef = doc(db, 'games', gameId)
+  const gameSnap = await getDoc(gameRef)
+  if (!gameSnap.exists()) throw new Error('Game not found')
+  const game = { id: gameId, ...gameSnap.data() } as Game
+
+  // Reuse the existing (leagueId, playedAt DESC) composite index and
+  // reverse client-side to walk chronologically — avoids needing a second
+  // ASC-direction index.
+  const [allGamesSnap, membershipsSnap] = await Promise.all([
+    getDocs(
+      query(
+        collection(db, 'games'),
+        where('leagueId', '==', game.leagueId),
+        orderBy('playedAt', 'desc'),
+      ),
+    ),
+    getDocs(
+      query(
+        collection(db, 'memberships'),
+        where('leagueId', '==', game.leagueId),
+      ),
+    ),
+  ])
+
+  const otherGames = allGamesSnap.docs
+    .map((d) => ({ id: d.id, ...d.data() }) as Game)
+    .filter((g) => g.id !== gameId)
+    .reverse()
+
+  if (otherGames.length > 200) {
+    throw new Error(
+      'This league has too many games to recompute in one pass. Contact an admin.',
+    )
+  }
+
+  const currentMemberUids = new Set(
+    membershipsSnap.docs.map((d) => (d.data() as Membership).userId),
+  )
+
+  const elo = new Map<string, number>()
+  const wins = new Map<string, number>()
+  const losses = new Map<string, number>()
+
+  for (const uid of currentMemberUids) {
+    elo.set(uid, 1000)
+    wins.set(uid, 0)
+    losses.set(uid, 0)
+  }
+
+  const snapshotUpdates: Array<{
+    id: string
+    winnerLeagueEloBefore: number
+    winnerLeagueEloAfter: number
+    loserLeagueEloBefore: number
+    loserLeagueEloAfter: number
+  }> = []
+
+  for (const g of otherGames) {
+    const wBefore = elo.get(g.winnerId) ?? 1000
+    const lBefore = elo.get(g.loserId) ?? 1000
+    const result = calculateElo(wBefore, lBefore, K_LEAGUE)
+
+    snapshotUpdates.push({
+      id: g.id,
+      winnerLeagueEloBefore: wBefore,
+      winnerLeagueEloAfter: result.winner,
+      loserLeagueEloBefore: lBefore,
+      loserLeagueEloAfter: result.loser,
+    })
+
+    elo.set(g.winnerId, result.winner)
+    elo.set(g.loserId, result.loser)
+    wins.set(g.winnerId, (wins.get(g.winnerId) ?? 0) + 1)
+    losses.set(g.loserId, (losses.get(g.loserId) ?? 0) + 1)
+  }
+
+  const batch = writeBatch(db)
+
+  for (const uid of currentMemberUids) {
+    batch.update(doc(db, 'memberships', membershipId(game.leagueId, uid)), {
+      leagueElo: elo.get(uid) ?? 1000,
+      leagueWins: wins.get(uid) ?? 0,
+      leagueLosses: losses.get(uid) ?? 0,
+    })
+  }
+
+  for (const upd of snapshotUpdates) {
+    batch.update(doc(db, 'games', upd.id), {
+      winnerLeagueEloBefore: upd.winnerLeagueEloBefore,
+      winnerLeagueEloAfter: upd.winnerLeagueEloAfter,
+      loserLeagueEloBefore: upd.loserLeagueEloBefore,
+      loserLeagueEloAfter: upd.loserLeagueEloAfter,
+    })
+  }
+
+  const winnerGlobalDelta =
+    game.winnerGlobalEloAfter - game.winnerGlobalEloBefore
+  const loserGlobalDelta = game.loserGlobalEloAfter - game.loserGlobalEloBefore
+  batch.update(doc(db, 'users', game.winnerId), {
+    globalElo: increment(-winnerGlobalDelta),
+    globalWins: increment(-1),
+  })
+  batch.update(doc(db, 'users', game.loserId), {
+    globalElo: increment(-loserGlobalDelta),
+    globalLosses: increment(-1),
+  })
+
+  batch.delete(gameRef)
+
+  await batch.commit()
 }
 
 export async function deleteLeague(leagueId: string): Promise<void> {

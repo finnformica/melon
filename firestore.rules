@@ -98,20 +98,38 @@ service cloud.firestore {
     }
 
     match /games/{gameId} {
-      allow read: if signedIn();
+      // Public so shared /g/:gameId cards work without auth.
+      // No email / PII on the game doc — names are denormalised display names.
+      allow read: if true;
 
       // Caller must be in the league; both players must also be members.
+      // Denormalised display fields are required to keep the public card safe.
       allow create: if signedIn()
         && isLeagueMember(request.resource.data.leagueId)
         && exists(/databases/$(database)/documents/memberships/$(request.resource.data.leagueId + '_' + request.resource.data.winnerId))
-        && exists(/databases/$(database)/documents/memberships/$(request.resource.data.leagueId + '_' + request.resource.data.loserId));
+        && exists(/databases/$(database)/documents/memberships/$(request.resource.data.leagueId + '_' + request.resource.data.loserId))
+        && request.resource.data.leagueName is string
+        && request.resource.data.sport is string
+        && request.resource.data.winnerDisplayName is string
+        && request.resource.data.loserDisplayName is string;
 
-      // Immutable for now — Phase 10 opens update for ELO recompute.
-      allow update: if false;
+      // ELO-snapshot rewrites are allowed during a recompute triggered by a
+      // game deletion. Only winner/loser/admin/owner may do this, and only the
+      // league-ELO snapshot fields may change.
+      allow update: if signedIn()
+        && (request.auth.uid == resource.data.winnerId
+            || request.auth.uid == resource.data.loserId
+            || isLeagueAdminOrOwner(resource.data.leagueId))
+        && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['winnerLeagueEloBefore', 'winnerLeagueEloAfter',
+                      'loserLeagueEloBefore', 'loserLeagueEloAfter']);
 
-      // League admin/owner can delete (needed for cascade on league delete).
-      // Phase 10 expands this to winner/loser of the game.
-      allow delete: if signedIn() && isLeagueAdminOrOwner(resource.data.leagueId);
+      // Winner, loser, or league admin/owner may delete.
+      allow delete: if signedIn() && (
+        request.auth.uid == resource.data.winnerId
+        || request.auth.uid == resource.data.loserId
+        || isLeagueAdminOrOwner(resource.data.leagueId)
+      );
     }
   }
 }

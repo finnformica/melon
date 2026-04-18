@@ -3,6 +3,7 @@ import { Navigate, createBrowserRouter } from 'react-router-dom'
 import { AppLayout } from '@/components/shared/AppLayout'
 import { ProtectedRoute } from '@/components/shared/ProtectedRoute'
 import LoginPage from '@/features/auth/LoginPage'
+import GameCardPage from '@/features/games/GameCardPage'
 import RecordGamePage from '@/features/games/RecordGamePage'
 import CreateLeaguePage from '@/features/leagues/CreateLeaguePage'
 import AutoJoinLeaguePage from '@/features/leagues/AutoJoinLeaguePage'
@@ -18,6 +19,11 @@ export const router = createBrowserRouter([
   {
     path: '/login',
     element: <LoginPage />,
+  },
+  {
+    // Public share card — no ProtectedRoute wrapper.
+    path: '/g/:gameId',
+    element: <GameCardPage />,
   },
   {
     path: '/',

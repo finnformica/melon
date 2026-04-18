@@ -53,4 +53,10 @@ export interface Game {
   kFactorGlobal: number
   kFactorLeague: number
   playedAt: Timestamp
+  // Denormalised display fields for the public share card (optional on
+  // pre-Phase 11 docs; always present on new games).
+  leagueName?: string
+  sport?: string
+  winnerDisplayName?: string
+  loserDisplayName?: string
 }
