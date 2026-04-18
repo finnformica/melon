@@ -75,9 +75,6 @@ function CardContent({ className, ...props }: React.ComponentProps<"div">) {
       data-slot="card-content"
       className={cn(
         "px-4 pb-4 group-data-[size=sm]/card:px-3 group-data-[size=sm]/card:pb-3",
-        // When a CardFooter follows, it brings its own padding + border, so
-        // strip the content's own bottom padding to avoid double spacing.
-        "has-[+[data-slot=card-footer]]:pb-0",
         className
       )}
       {...props}
