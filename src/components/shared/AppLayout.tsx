@@ -9,7 +9,7 @@ export function AppLayout() {
     <div className="flex min-h-screen bg-background text-foreground">
       <Sidebar className="hidden md:flex" />
       <div className="flex flex-1 flex-col md:ml-14 lg:ml-56">
-        <main className="flex-1 p-6 pb-24 md:pb-6">
+        <main className="flex-1 p-6 pb-[calc(6rem+env(safe-area-inset-bottom))] md:pb-6">
           <Outlet />
         </main>
       </div>
