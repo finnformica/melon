@@ -41,6 +41,7 @@ import { useMembers } from '@/hooks/useMembers'
 import { K_GLOBAL, K_LEAGUE, calculateTeamElo } from '@/lib/elo'
 import { deltaColorClass, formatDelta } from '@/lib/format'
 import { recordGame, setGamePhoto } from '@/lib/firestore'
+import { NPC_ELO, isNpcId, makeNpcId } from '@/lib/npc'
 import { recordGameInputSchema } from '@/lib/schemas'
 import type { RecordGameInput } from '@/lib/schemas'
 import { MAX_INPUT_BYTES, fileToCompressedDataUrl } from '@/lib/image'
@@ -71,6 +72,7 @@ export default function RecordGamePage() {
   const [photoFile, setPhotoFile] = useState<File | null>(null)
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const npcCounterRef = useRef(0)
 
   useEffect(() => {
     if (!photoFile) {
@@ -128,8 +130,6 @@ export default function RecordGamePage() {
   )
 
   function switchMode(next: GameType) {
-    // When switching to 1v1, keep at most one uid per side. When switching to
-    // Team, keep as-is.
     if (next === '1v1') {
       setValue('winnerIds', winnerIds.slice(0, 1), { shouldValidate: true })
       setValue('loserIds', loserIds.slice(0, 1), { shouldValidate: true })
@@ -148,6 +148,16 @@ export default function RecordGamePage() {
     }
   }
 
+  function addNpc(side: 'winnerIds' | 'loserIds') {
+    const npcId = makeNpcId(npcCounterRef.current++)
+    const current = side === 'winnerIds' ? winnerIds : loserIds
+    if (gameType === '1v1') {
+      setValue(side, [npcId], { shouldValidate: true })
+    } else {
+      setValue(side, [...current, npcId], { shouldValidate: true })
+    }
+  }
+
   function removePlayer(side: 'winnerIds' | 'loserIds', uid: string) {
     const current = side === 'winnerIds' ? winnerIds : loserIds
     setValue(
@@ -160,40 +170,58 @@ export default function RecordGamePage() {
   const deltas = useMemo(() => {
     if (!members) return null
     if (winnerIds.length === 0 || loserIds.length === 0) return null
-    const winners = winnerIds
-      .map((uid) => memberByUid.get(uid))
-      .filter((m): m is LeagueMember => Boolean(m?.user))
-    const losers = loserIds
-      .map((uid) => memberByUid.get(uid))
-      .filter((m): m is LeagueMember => Boolean(m?.user))
-    if (winners.length !== winnerIds.length || losers.length !== loserIds.length) {
+
+    const getGlobalElo = (uid: string): number | null => {
+      if (isNpcId(uid)) return NPC_ELO
+      const m = memberByUid.get(uid)
+      return m?.user ? m.user.globalElo : null
+    }
+    const getLeagueElo = (uid: string): number | null => {
+      if (isNpcId(uid)) return NPC_ELO
+      const m = memberByUid.get(uid)
+      return m ? m.membership.leagueElo : null
+    }
+
+    const wGlobal = winnerIds.map(getGlobalElo)
+    const lGlobal = loserIds.map(getGlobalElo)
+    const wLeague = winnerIds.map(getLeagueElo)
+    const lLeague = loserIds.map(getLeagueElo)
+
+    if (wGlobal.some((v) => v === null) || lGlobal.some((v) => v === null)) {
       return null
     }
 
-    const wGlobal = winners.map((m) => m.user!.globalElo)
-    const lGlobal = losers.map((m) => m.user!.globalElo)
-    const wLeague = winners.map((m) => m.membership.leagueElo)
-    const lLeague = losers.map((m) => m.membership.leagueElo)
+    const globalRes = calculateTeamElo(wGlobal as number[], lGlobal as number[], K_GLOBAL)
+    const leagueRes = calculateTeamElo(wLeague as number[], lLeague as number[], K_LEAGUE)
 
-    const globalRes = calculateTeamElo(wGlobal, lGlobal, K_GLOBAL)
-    const leagueRes = calculateTeamElo(wLeague, lLeague, K_LEAGUE)
-
-    const winnersOut: TeamDelta[] = winners.map((m) => ({
-      uid: m.membership.userId,
-      name: memberName(m),
-      globalBefore: m.user!.globalElo,
-      globalAfter: m.user!.globalElo + globalRes.winnerDelta,
-      leagueBefore: m.membership.leagueElo,
-      leagueAfter: m.membership.leagueElo + leagueRes.winnerDelta,
-    }))
-    const losersOut: TeamDelta[] = losers.map((m) => ({
-      uid: m.membership.userId,
-      name: memberName(m),
-      globalBefore: m.user!.globalElo,
-      globalAfter: m.user!.globalElo + globalRes.loserDelta,
-      leagueBefore: m.membership.leagueElo,
-      leagueAfter: m.membership.leagueElo + leagueRes.loserDelta,
-    }))
+    const winnersOut: TeamDelta[] = winnerIds.map((uid) => {
+      if (isNpcId(uid)) {
+        return { uid, name: 'NPC', globalBefore: NPC_ELO, globalAfter: NPC_ELO, leagueBefore: NPC_ELO, leagueAfter: NPC_ELO }
+      }
+      const m = memberByUid.get(uid)!
+      return {
+        uid,
+        name: memberName(m),
+        globalBefore: m.user!.globalElo,
+        globalAfter: m.user!.globalElo + globalRes.winnerDelta,
+        leagueBefore: m.membership.leagueElo,
+        leagueAfter: m.membership.leagueElo + leagueRes.winnerDelta,
+      }
+    })
+    const losersOut: TeamDelta[] = loserIds.map((uid) => {
+      if (isNpcId(uid)) {
+        return { uid, name: 'NPC', globalBefore: NPC_ELO, globalAfter: NPC_ELO, leagueBefore: NPC_ELO, leagueAfter: NPC_ELO }
+      }
+      const m = memberByUid.get(uid)!
+      return {
+        uid,
+        name: memberName(m),
+        globalBefore: m.user!.globalElo,
+        globalAfter: m.user!.globalElo + globalRes.loserDelta,
+        leagueBefore: m.membership.leagueElo,
+        leagueAfter: m.membership.leagueElo + leagueRes.loserDelta,
+      }
+    })
 
     return { winners: winnersOut, losers: losersOut }
   }, [members, memberByUid, winnerIds, loserIds])
@@ -276,13 +304,13 @@ export default function RecordGamePage() {
     )
   }
 
-  if (!members || members.length < 2) {
+  if (!members || members.length < 1) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Not enough members</CardTitle>
+          <CardTitle>No members yet</CardTitle>
           <CardDescription>
-            You need at least two players in this league to record a game.
+            You need at least one player in this league to record a game.
             Share the invite code from the league page.
           </CardDescription>
         </CardHeader>
@@ -331,6 +359,7 @@ export default function RecordGamePage() {
               options={availableForWinner}
               onAdd={(uid) => addPlayer('winnerIds', uid)}
               onRemove={(uid) => removePlayer('winnerIds', uid)}
+              onAddNpc={() => addNpc('winnerIds')}
               allowMultiple={gameType === 'team'}
               memberByUid={memberByUid}
             />
@@ -342,6 +371,7 @@ export default function RecordGamePage() {
               options={availableForLoser}
               onAdd={(uid) => addPlayer('loserIds', uid)}
               onRemove={(uid) => removePlayer('loserIds', uid)}
+              onAddNpc={() => addNpc('loserIds')}
               allowMultiple={gameType === 'team'}
               memberByUid={memberByUid}
             />
@@ -461,6 +491,7 @@ function TeamPicker({
   options,
   onAdd,
   onRemove,
+  onAddNpc,
   allowMultiple,
   memberByUid,
 }: {
@@ -470,13 +501,14 @@ function TeamPicker({
   options: LeagueMember[]
   onAdd: (uid: string) => void
   onRemove: (uid: string) => void
+  onAddNpc: () => void
   allowMultiple: boolean
   memberByUid: Map<string, LeagueMember>
 }) {
   const selectable = options.filter(
     (m) => !selectedIds.includes(m.membership.userId),
   )
-  const showPicker = allowMultiple || selectedIds.length === 0
+  const showControls = allowMultiple || selectedIds.length === 0
   return (
     <div className="flex flex-col gap-1.5">
       <Label htmlFor={`${side}-select`}>{label}</Label>
@@ -484,18 +516,19 @@ function TeamPicker({
         <div className="flex flex-wrap gap-1.5">
           {selectedIds.map((uid) => {
             const m = memberByUid.get(uid)
+            const name = isNpcId(uid) ? 'NPC' : (m ? memberName(m) : uid)
             return (
               <Badge
                 key={uid}
-                variant="secondary"
+                variant={isNpcId(uid) ? 'outline' : 'secondary'}
                 className="flex items-center gap-1"
               >
-                {m ? memberName(m) : uid}
+                {name}
                 <button
                   type="button"
                   onClick={() => onRemove(uid)}
                   className="rounded-full p-0.5 transition-colors hover:bg-background/40"
-                  aria-label={`Remove ${m ? memberName(m) : uid}`}
+                  aria-label={`Remove ${name}`}
                 >
                   <X className="h-3 w-3" />
                 </button>
@@ -504,33 +537,41 @@ function TeamPicker({
           })}
         </div>
       )}
-      {showPicker && (
-        <Select
-          key={selectedIds.join(',')}
-          value=""
-          onValueChange={(v) => onAdd(v)}
-        >
-          <SelectTrigger id={`${side}-select`}>
-            <SelectValue
-              placeholder={allowMultiple ? 'Add player…' : 'Pick player'}
-            />
-          </SelectTrigger>
-          <SelectContent>
-            {selectable.map(({ membership, user }) => (
-              <SelectItem
-                key={membership.userId}
-                value={membership.userId}
-              >
-                {user?.displayName || user?.email || 'Unknown'}
-              </SelectItem>
-            ))}
-            {selectable.length === 0 && (
-              <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                No available players
-              </div>
-            )}
-          </SelectContent>
-        </Select>
+      {showControls && (
+        <div className="flex gap-2">
+          {selectable.length > 0 && (
+            <Select
+              key={selectedIds.join(',')}
+              value=""
+              onValueChange={(v) => onAdd(v)}
+            >
+              <SelectTrigger id={`${side}-select`} className="flex-1">
+                <SelectValue
+                  placeholder={allowMultiple ? 'Add player…' : 'Pick player'}
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {selectable.map(({ membership, user }) => (
+                  <SelectItem
+                    key={membership.userId}
+                    value={membership.userId}
+                  >
+                    {user?.displayName || user?.email || 'Unknown'}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onAddNpc}
+            className="shrink-0"
+          >
+            + NPC
+          </Button>
+        </div>
       )}
     </div>
   )
@@ -554,12 +595,18 @@ function RatingRow({ row }: { row: TeamDelta }) {
     <div className="flex items-center justify-between gap-2">
       <span className="truncate text-xs font-medium">{row.name}</span>
       <div className="flex gap-3 font-mono text-xs">
-        <span className={deltaColorClass(row.globalBefore, row.globalAfter)}>
-          G {formatDelta(row.globalBefore, row.globalAfter)}
-        </span>
-        <span className={deltaColorClass(row.leagueBefore, row.leagueAfter)}>
-          L {formatDelta(row.leagueBefore, row.leagueAfter)}
-        </span>
+        {isNpcId(row.uid) ? (
+          <span className="text-muted-foreground">ELO 900 (fixed)</span>
+        ) : (
+          <>
+            <span className={deltaColorClass(row.globalBefore, row.globalAfter)}>
+              G {formatDelta(row.globalBefore, row.globalAfter)}
+            </span>
+            <span className={deltaColorClass(row.leagueBefore, row.leagueAfter)}>
+              L {formatDelta(row.leagueBefore, row.leagueAfter)}
+            </span>
+          </>
+        )}
       </div>
     </div>
   )
