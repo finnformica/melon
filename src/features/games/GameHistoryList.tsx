@@ -25,6 +25,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
@@ -35,13 +36,21 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/features/auth/AuthProvider'
 import { useGames } from '@/hooks/useGames'
 import { useLeagueRole } from '@/hooks/useLeagueRole'
 import { useMembers } from '@/hooks/useMembers'
-import { deleteGame } from '@/lib/firestore'
+import { deleteGame, replaceNpcWithPlayer } from '@/lib/firestore'
 import { deltaColorClass, formatDelta } from '@/lib/format'
+import { isNpcId } from '@/lib/npc'
 import type { Game } from '@/types'
 
 export default function GameHistoryList({ leagueId }: { leagueId: string }) {
@@ -54,7 +63,12 @@ export default function GameHistoryList({ leagueId }: { leagueId: string }) {
   const [selectedGame, setSelectedGame] = useState<Game | null>(null)
   const [busy, setBusy] = useState(false)
 
+  const [replacingNpc, setReplacingNpc] = useState<{ game: Game; npcId: string } | null>(null)
+  const [replaceTarget, setReplaceTarget] = useState('')
+  const [replacing, setReplacing] = useState(false)
+
   const displayName = (uid: string): string => {
+    if (isNpcId(uid)) return 'NPC'
     const member = members?.find((m) => m.membership.userId === uid)
     return (
       member?.user?.displayName || member?.user?.email || 'Unknown player'
@@ -88,6 +102,23 @@ export default function GameHistoryList({ leagueId }: { leagueId: string }) {
       toast.error(err instanceof Error ? err.message : 'Delete failed')
     } finally {
       setBusy(false)
+    }
+  }
+
+  async function runReplaceNpc() {
+    if (!replacingNpc || !replaceTarget) return
+    setReplacing(true)
+    try {
+      await replaceNpcWithPlayer(replacingNpc.game.id, replacingNpc.npcId, replaceTarget)
+      toast.success('NPC replaced with player')
+      // Refresh the selected game view if open
+      setSelectedGame(null)
+      setReplacingNpc(null)
+      setReplaceTarget('')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not replace NPC')
+    } finally {
+      setReplacing(false)
     }
   }
 
@@ -213,6 +244,7 @@ export default function GameHistoryList({ leagueId }: { leagueId: string }) {
         )}
       </AlertDialog>
 
+      {/* Game detail modal */}
       <Dialog
         open={selectedGame !== null}
         onOpenChange={(o) => !o && setSelectedGame(null)}
@@ -248,16 +280,37 @@ export default function GameHistoryList({ leagueId }: { leagueId: string }) {
                     if (!snap) return null
                     return (
                       <div key={uid} className="flex items-center justify-between gap-2">
-                        <span className={`truncate text-xs font-medium${isWinner ? '' : ' text-muted-foreground'}`}>
-                          {displayName(uid)}
-                        </span>
-                        <div className="flex gap-3 font-mono text-xs">
-                          <span className={deltaColorClass(snap.globalBefore, snap.globalAfter)}>
-                            G {formatDelta(snap.globalBefore, snap.globalAfter)}
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className={`truncate text-xs font-medium${isWinner ? '' : ' text-muted-foreground'}`}>
+                            {displayName(uid)}
                           </span>
-                          <span className={deltaColorClass(snap.leagueBefore, snap.leagueAfter)}>
-                            L {formatDelta(snap.leagueBefore, snap.leagueAfter)}
-                          </span>
+                          {isNpcId(uid) && canDelete(selectedGame) && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-5 shrink-0 px-1.5 text-xs"
+                              onClick={() => {
+                                setSelectedGame(null)
+                                setReplacingNpc({ game: selectedGame, npcId: uid })
+                              }}
+                            >
+                              Replace
+                            </Button>
+                          )}
+                        </div>
+                        <div className="flex gap-3 font-mono text-xs shrink-0">
+                          {isNpcId(uid) ? (
+                            <span className="text-muted-foreground">ELO 900</span>
+                          ) : (
+                            <>
+                              <span className={deltaColorClass(snap.globalBefore, snap.globalAfter)}>
+                                G {formatDelta(snap.globalBefore, snap.globalAfter)}
+                              </span>
+                              <span className={deltaColorClass(snap.leagueBefore, snap.leagueAfter)}>
+                                L {formatDelta(snap.leagueBefore, snap.leagueAfter)}
+                              </span>
+                            </>
+                          )}
                         </div>
                       </div>
                     )
@@ -266,6 +319,67 @@ export default function GameHistoryList({ leagueId }: { leagueId: string }) {
               </div>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* NPC replacement dialog */}
+      <Dialog
+        open={replacingNpc !== null}
+        onOpenChange={(o) => {
+          if (!o) {
+            setReplacingNpc(null)
+            setReplaceTarget('')
+          }
+        }}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Replace NPC with a player</DialogTitle>
+            <DialogDescription>
+              Choose a league member to take this NPC&apos;s spot. The original
+              ELO snapshot (900) will be attributed to them — no recalculation
+              is performed.
+            </DialogDescription>
+          </DialogHeader>
+          <Select value={replaceTarget} onValueChange={setReplaceTarget}>
+            <SelectTrigger>
+              <SelectValue placeholder="Pick a player…" />
+            </SelectTrigger>
+            <SelectContent>
+              {members
+                ?.filter((m) => {
+                  if (!replacingNpc) return false
+                  const realIds = [
+                    ...replacingNpc.game.winnerIds,
+                    ...replacingNpc.game.loserIds,
+                  ].filter((id) => !isNpcId(id))
+                  return !realIds.includes(m.membership.userId)
+                })
+                .map(({ membership, user }) => (
+                  <SelectItem key={membership.userId} value={membership.userId}>
+                    {user?.displayName || user?.email || 'Unknown'}
+                  </SelectItem>
+                ))}
+            </SelectContent>
+          </Select>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setReplacingNpc(null)
+                setReplaceTarget('')
+              }}
+              disabled={replacing}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => void runReplaceNpc()}
+              disabled={!replaceTarget || replacing}
+            >
+              Replace
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>
@@ -280,8 +394,11 @@ function formatTeam(uids: string[], name: (uid: string) => string): string {
 }
 
 function TeamDeltaPill({ uids, game }: { uids: string[]; game: Game }) {
-  // All teammates share the same league delta, so read any one entry.
-  const snap = uids.map((u) => game.playerElo[u]).find(Boolean)
+  // Prefer a real player's snapshot — NPCs always show zero delta.
+  const snap = uids
+    .filter((u) => !isNpcId(u))
+    .map((u) => game.playerElo[u])
+    .find(Boolean)
   if (!snap) return null
   return (
     <span className={deltaColorClass(snap.leagueBefore, snap.leagueAfter)}>

@@ -20,6 +20,7 @@ import {
 import { K_GLOBAL, K_LEAGUE, calculateTeamElo } from '@/lib/elo'
 import { db } from '@/lib/firebase'
 import { normalizeGame } from '@/lib/gameSchema'
+import { NPC_DISPLAY_NAME, NPC_ELO, isNpcId } from '@/lib/npc'
 import type {
   CreateLeagueInput,
   RecordGameInput,
@@ -196,6 +197,11 @@ export async function recordGame(input: RecordGameInput): Promise<string> {
     throw new Error('A player cannot appear twice in one game')
   }
 
+  const realIds = allIds.filter((id) => !isNpcId(id))
+  if (realIds.length === 0) {
+    throw new Error('At least one real player must be in the game')
+  }
+
   // Denormalised league info for the public share card. Read outside the
   // transaction — league name / sport are rarely edited and strict atomicity
   // with the ELO update isn't required here.
@@ -207,23 +213,23 @@ export async function recordGame(input: RecordGameInput): Promise<string> {
 
   const gameRef = doc(collection(db, 'games'))
   const userRefs = Object.fromEntries(
-    allIds.map((uid) => [uid, doc(db, 'users', uid)]),
+    realIds.map((uid) => [uid, doc(db, 'users', uid)]),
   )
   const membershipRefs = Object.fromEntries(
-    allIds.map((uid) => [uid, doc(db, 'memberships', membershipId(input.leagueId, uid))]),
+    realIds.map((uid) => [uid, doc(db, 'memberships', membershipId(input.leagueId, uid))]),
   )
 
   return runTransaction(db, async (tx) => {
     const userSnaps = await Promise.all(
-      allIds.map((uid) => tx.get(userRefs[uid])),
+      realIds.map((uid) => tx.get(userRefs[uid])),
     )
     const membershipSnaps = await Promise.all(
-      allIds.map((uid) => tx.get(membershipRefs[uid])),
+      realIds.map((uid) => tx.get(membershipRefs[uid])),
     )
 
     const users: Record<string, Omit<User, 'uid'>> = {}
     const memberships: Record<string, Omit<Membership, 'id'>> = {}
-    allIds.forEach((uid, i) => {
+    realIds.forEach((uid, i) => {
       const userSnap = userSnaps[i]
       const membershipSnap = membershipSnaps[i]
       if (!userSnap.exists()) {
@@ -236,23 +242,20 @@ export async function recordGame(input: RecordGameInput): Promise<string> {
       memberships[uid] = membershipSnap.data() as Omit<Membership, 'id'>
     })
 
-    const winnerGlobalRatings = input.winnerIds.map((uid) => users[uid].globalElo)
-    const loserGlobalRatings = input.loserIds.map((uid) => users[uid].globalElo)
-    const winnerLeagueRatings = input.winnerIds.map(
-      (uid) => memberships[uid].leagueElo,
-    )
-    const loserLeagueRatings = input.loserIds.map(
-      (uid) => memberships[uid].leagueElo,
-    )
+    // NPCs always contribute NPC_ELO to their team's average rating.
+    const getGlobalElo = (uid: string) =>
+      isNpcId(uid) ? NPC_ELO : users[uid].globalElo
+    const getLeagueElo = (uid: string) =>
+      isNpcId(uid) ? NPC_ELO : memberships[uid].leagueElo
 
     const global = calculateTeamElo(
-      winnerGlobalRatings,
-      loserGlobalRatings,
+      input.winnerIds.map(getGlobalElo),
+      input.loserIds.map(getGlobalElo),
       K_GLOBAL,
     )
     const league = calculateTeamElo(
-      winnerLeagueRatings,
-      loserLeagueRatings,
+      input.winnerIds.map(getLeagueElo),
+      input.loserIds.map(getLeagueElo),
       K_LEAGUE,
     )
 
@@ -260,22 +263,32 @@ export async function recordGame(input: RecordGameInput): Promise<string> {
     const displayNames: Record<string, string> = {}
 
     for (const uid of input.winnerIds) {
-      playerElo[uid] = {
-        globalBefore: users[uid].globalElo,
-        globalAfter: users[uid].globalElo + global.winnerDelta,
-        leagueBefore: memberships[uid].leagueElo,
-        leagueAfter: memberships[uid].leagueElo + league.winnerDelta,
+      if (isNpcId(uid)) {
+        playerElo[uid] = { globalBefore: NPC_ELO, globalAfter: NPC_ELO, leagueBefore: NPC_ELO, leagueAfter: NPC_ELO }
+        displayNames[uid] = NPC_DISPLAY_NAME
+      } else {
+        playerElo[uid] = {
+          globalBefore: users[uid].globalElo,
+          globalAfter: users[uid].globalElo + global.winnerDelta,
+          leagueBefore: memberships[uid].leagueElo,
+          leagueAfter: memberships[uid].leagueElo + league.winnerDelta,
+        }
+        displayNames[uid] = publicDisplayName(users[uid].displayName)
       }
-      displayNames[uid] = publicDisplayName(users[uid].displayName)
     }
     for (const uid of input.loserIds) {
-      playerElo[uid] = {
-        globalBefore: users[uid].globalElo,
-        globalAfter: users[uid].globalElo + global.loserDelta,
-        leagueBefore: memberships[uid].leagueElo,
-        leagueAfter: memberships[uid].leagueElo + league.loserDelta,
+      if (isNpcId(uid)) {
+        playerElo[uid] = { globalBefore: NPC_ELO, globalAfter: NPC_ELO, leagueBefore: NPC_ELO, leagueAfter: NPC_ELO }
+        displayNames[uid] = NPC_DISPLAY_NAME
+      } else {
+        playerElo[uid] = {
+          globalBefore: users[uid].globalElo,
+          globalAfter: users[uid].globalElo + global.loserDelta,
+          leagueBefore: memberships[uid].leagueElo,
+          leagueAfter: memberships[uid].leagueElo + league.loserDelta,
+        }
+        displayNames[uid] = publicDisplayName(users[uid].displayName)
       }
-      displayNames[uid] = publicDisplayName(users[uid].displayName)
     }
 
     tx.set(gameRef, {
@@ -293,6 +306,7 @@ export async function recordGame(input: RecordGameInput): Promise<string> {
     })
 
     for (const uid of input.winnerIds) {
+      if (isNpcId(uid)) continue
       tx.update(userRefs[uid], {
         globalElo: playerElo[uid].globalAfter,
         globalWins: increment(1),
@@ -303,6 +317,7 @@ export async function recordGame(input: RecordGameInput): Promise<string> {
       })
     }
     for (const uid of input.loserIds) {
+      if (isNpcId(uid)) continue
       tx.update(userRefs[uid], {
         globalElo: playerElo[uid].globalAfter,
         globalLosses: increment(1),
@@ -452,8 +467,9 @@ export async function deleteGame(gameId: string): Promise<void> {
   const snapshotUpdates: Array<{ id: string; playerElo: Record<string, PlayerEloSnapshot> }> = []
 
   for (const g of otherGames) {
-    const winnerBefore = g.winnerIds.map((uid) => elo.get(uid) ?? 1000)
-    const loserBefore = g.loserIds.map((uid) => elo.get(uid) ?? 1000)
+    // NPCs always contribute NPC_ELO; they're not in the elo map.
+    const winnerBefore = g.winnerIds.map((uid) => isNpcId(uid) ? NPC_ELO : (elo.get(uid) ?? 1000))
+    const loserBefore = g.loserIds.map((uid) => isNpcId(uid) ? NPC_ELO : (elo.get(uid) ?? 1000))
     const { winnerDelta, loserDelta } = calculateTeamElo(
       winnerBefore,
       loserBefore,
@@ -462,6 +478,10 @@ export async function deleteGame(gameId: string): Promise<void> {
 
     const newPlayerElo: Record<string, PlayerEloSnapshot> = {}
     for (const uid of g.winnerIds) {
+      if (isNpcId(uid)) {
+        newPlayerElo[uid] = { globalBefore: NPC_ELO, globalAfter: NPC_ELO, leagueBefore: NPC_ELO, leagueAfter: NPC_ELO }
+        continue
+      }
       const before = elo.get(uid) ?? 1000
       const after = before + winnerDelta
       const existingGlobal = g.playerElo[uid]
@@ -475,6 +495,10 @@ export async function deleteGame(gameId: string): Promise<void> {
       wins.set(uid, (wins.get(uid) ?? 0) + 1)
     }
     for (const uid of g.loserIds) {
+      if (isNpcId(uid)) {
+        newPlayerElo[uid] = { globalBefore: NPC_ELO, globalAfter: NPC_ELO, leagueBefore: NPC_ELO, leagueAfter: NPC_ELO }
+        continue
+      }
       const before = elo.get(uid) ?? 1000
       const after = before + loserDelta
       const existingGlobal = g.playerElo[uid]
@@ -505,8 +529,9 @@ export async function deleteGame(gameId: string): Promise<void> {
     batch.update(doc(db, 'games', upd.id), { playerElo: upd.playerElo })
   }
 
-  // Reverse global ELO deltas and W/L for every participant of the deleted game.
+  // Reverse global ELO deltas and W/L for every real participant of the deleted game.
   for (const uid of game.winnerIds) {
+    if (isNpcId(uid)) continue
     const snap = game.playerElo[uid]
     const delta = snap ? snap.globalAfter - snap.globalBefore : 0
     batch.update(doc(db, 'users', uid), {
@@ -515,6 +540,7 @@ export async function deleteGame(gameId: string): Promise<void> {
     })
   }
   for (const uid of game.loserIds) {
+    if (isNpcId(uid)) continue
     const snap = game.playerElo[uid]
     const delta = snap ? snap.globalAfter - snap.globalBefore : 0
     batch.update(doc(db, 'users', uid), {
@@ -526,6 +552,60 @@ export async function deleteGame(gameId: string): Promise<void> {
   batch.delete(gameRef)
 
   await batch.commit()
+}
+
+// Replaces an NPC slot in an existing game with a real league member.
+// The original ELO snapshot (recorded at 900) is preserved and attributed
+// to the real player — no ELO recompute is performed.
+export async function replaceNpcWithPlayer(
+  gameId: string,
+  npcId: string,
+  realPlayerId: string,
+): Promise<void> {
+  if (!isNpcId(npcId)) throw new Error('Not an NPC slot')
+
+  const gameSnap = await getDoc(doc(db, 'games', gameId))
+  if (!gameSnap.exists()) throw new Error('Game not found')
+  const game = normalizeGame({ id: gameId, ...gameSnap.data() })
+
+  const [memberSnap, userSnap] = await Promise.all([
+    getDoc(doc(db, 'memberships', membershipId(game.leagueId, realPlayerId))),
+    getDoc(doc(db, 'users', realPlayerId)),
+  ])
+
+  if (!memberSnap.exists()) {
+    throw new Error('Player must be a member of this league')
+  }
+
+  if (!game.winnerIds.includes(npcId) && !game.loserIds.includes(npcId)) {
+    throw new Error('NPC slot not found in this game')
+  }
+  const allRealIds = [...game.winnerIds, ...game.loserIds].filter((id) => !isNpcId(id))
+  if (allRealIds.includes(realPlayerId)) {
+    throw new Error('Player is already in this game')
+  }
+
+  const realDisplayName = userSnap.exists()
+    ? publicDisplayName((userSnap.data() as User).displayName)
+    : 'Player'
+
+  const newWinnerIds = game.winnerIds.map((id) => (id === npcId ? realPlayerId : id))
+  const newLoserIds = game.loserIds.map((id) => (id === npcId ? realPlayerId : id))
+
+  const newPlayerElo: Record<string, PlayerEloSnapshot> = { ...game.playerElo }
+  newPlayerElo[realPlayerId] = newPlayerElo[npcId]
+  delete newPlayerElo[npcId]
+
+  const newDisplayNames: Record<string, string> = { ...(game.displayNames ?? {}) }
+  newDisplayNames[realPlayerId] = realDisplayName
+  delete newDisplayNames[npcId]
+
+  await updateDoc(doc(db, 'games', gameId), {
+    winnerIds: newWinnerIds,
+    loserIds: newLoserIds,
+    playerElo: newPlayerElo,
+    displayNames: newDisplayNames,
+  })
 }
 
 export async function deleteLeague(leagueId: string): Promise<void> {
