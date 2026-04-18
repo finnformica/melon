@@ -5,10 +5,11 @@ export const MAX_PHOTO_BYTES = 700_000
 export const MAX_INPUT_BYTES = 15 * 1024 * 1024
 
 // Draws the file onto a canvas (downscaled so the longest edge is at most
-// `maxDimension`) and encodes as WebP with progressively lower quality until
-// the resulting data URL is small enough. Throws if WebP isn't supported or
-// the result still exceeds MAX_PHOTO_BYTES at the lowest tried quality.
-export async function fileToWebpDataUrl(
+// `maxDimension`) and encodes as JPEG with progressively lower quality until
+// the resulting data URL fits inside MAX_PHOTO_BYTES. JPEG (not WebP) because
+// iOS Safari < 17 silently falls back to PNG when asked to encode WebP from a
+// canvas, which blows the size budget.
+export async function fileToCompressedDataUrl(
   file: File,
   maxDimension = 1280,
 ): Promise<string> {
@@ -38,10 +39,7 @@ export async function fileToWebpDataUrl(
     ctx.drawImage(img, 0, 0, w, h)
 
     for (const quality of [0.82, 0.7, 0.55, 0.4]) {
-      const url = canvas.toDataURL('image/webp', quality)
-      if (!url.startsWith('data:image/webp')) {
-        throw new Error('This browser cannot encode WebP')
-      }
+      const url = canvas.toDataURL('image/jpeg', quality)
       if (url.length <= MAX_PHOTO_BYTES) return url
     }
     throw new Error(

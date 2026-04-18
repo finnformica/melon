@@ -43,7 +43,7 @@ import { deltaColorClass, formatDelta } from '@/lib/format'
 import { recordGame, setGamePhoto } from '@/lib/firestore'
 import { recordGameInputSchema } from '@/lib/schemas'
 import type { RecordGameInput } from '@/lib/schemas'
-import { MAX_INPUT_BYTES, fileToWebpDataUrl } from '@/lib/image'
+import { MAX_INPUT_BYTES, fileToCompressedDataUrl } from '@/lib/image'
 
 type GameType = '1v1' | 'team'
 
@@ -225,7 +225,7 @@ export default function RecordGamePage() {
       let photoDataUrl: string | null = null
       if (photoFile) {
         try {
-          photoDataUrl = await fileToWebpDataUrl(photoFile)
+          photoDataUrl = await fileToCompressedDataUrl(photoFile)
         } catch (err) {
           toast.error(
             err instanceof Error
