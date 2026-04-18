@@ -15,6 +15,7 @@ import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 
 import { auth, db } from '@/lib/firebase'
+import { updateUserProfile as firestoreUpdateUserProfile } from '@/lib/firestore'
 import type { User } from '@/types'
 
 interface AuthContextValue {
@@ -27,6 +28,7 @@ interface AuthContextValue {
   signUpWithPassword: (email: string, password: string) => Promise<void>
   sendMagicLink: (email: string, redirect?: string) => Promise<void>
   confirmMagicLinkEmail: (email: string) => Promise<void>
+  updateUserProfile: (updates: { displayName?: string; photoURL?: string }) => Promise<void>
   signOut: () => Promise<void>
 }
 
@@ -140,6 +142,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
       async signUpWithPassword(email: string, password: string) {
         await createUserWithEmailAndPassword(auth, email, password)
+      },
+      async updateUserProfile(updates: { displayName?: string; photoURL?: string }) {
+        if (!firebaseUser) throw new Error('Not signed in')
+        await firestoreUpdateUserProfile(firebaseUser.uid, updates)
+        setUser((prev) => (prev ? { ...prev, ...updates } : prev))
       },
       async sendMagicLink(email: string, redirect?: string) {
         const url = new URL(`${window.location.origin}/login`)
