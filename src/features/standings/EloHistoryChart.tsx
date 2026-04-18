@@ -66,9 +66,8 @@ function LeagueChart({ leagueId }: { leagueId: string }) {
       for (const u of g.winnerIds) if (!isNpcId(u)) everPlayed.add(u)
       for (const u of g.loserIds) if (!isNpcId(u)) everPlayed.add(u)
     }
-    const players = [...everPlayed]
 
-    const current = new Map<string, number>(players.map((u) => [u, 1000]))
+    const current = new Map<string, number>([...everPlayed].map((u) => [u, 1000]))
     const t0 = (sorted[0].playedAt?.toMillis() ?? Date.now()) - 1
     const rows: LeagueRow[] = [{ t: t0, ...Object.fromEntries(current) }]
 
@@ -80,6 +79,11 @@ function LeagueChart({ leagueId }: { leagueId: string }) {
       const t = g.playedAt?.toMillis() ?? Date.now()
       rows.push({ t, ...Object.fromEntries(current) })
     }
+
+    // Sort by final league ELO descending so legend order matches standings.
+    const players = [...everPlayed].sort(
+      (a, b) => (current.get(b) ?? 1000) - (current.get(a) ?? 1000),
+    )
 
     return { rows, players }
   }, [games])
