@@ -229,19 +229,22 @@ Access via `import.meta.env.VITE_FIREBASE_*`.
 - Game `photoUrl` may be patched post-create by a participant; no other field may change
 - `playerElo` may be rewritten by a participant or league admin/owner only during `deleteGame` recomputes
 
-## Game photos (inline WebP)
+## Game photos (inline compressed data URL)
 
-Game photos are stored inline as a WebP `data:` URL in the game doc's
+Game photos are stored inline as a compressed `data:` URL in the game doc's
 `photoUrl` field — **not** Firebase Storage. The client resizes (longest edge
-≤ 1280 px) and re-encodes via `<canvas>.toDataURL('image/webp', q)` in
-`src/lib/image.ts`, stepping down through quality tiers until the encoded
-string fits inside the `MAX_PHOTO_BYTES` budget (~700 KB) that leaves room
-for the rest of the Firestore doc (1 MiB cap).
+≤ 1280 px) and re-encodes via `<canvas>.toDataURL` in `src/lib/image.ts`,
+stepping down through quality tiers until the encoded string fits inside the
+`MAX_PHOTO_BYTES` budget (~700 KB) that leaves room for the rest of the
+Firestore doc (1 MiB cap). WebP is preferred; iOS Safari < 17 can't encode
+WebP from a canvas (it silently falls back to PNG), so on those browsers
+`fileToCompressedDataUrl` falls back to JPEG instead.
 
 Flow: `recordGame` writes the game doc first (getting a `gameId`); if the
-user attached a photo, the form encodes it to WebP and then `setGamePhoto`
-patches `photoUrl` onto the doc. `<img src={photoUrl}>` renders data URLs
-natively, so consumer components don't care where the bytes came from.
+user attached a photo, the form encodes it via `fileToCompressedDataUrl` and
+then `setGamePhoto` patches `photoUrl` onto the doc. `<img src={photoUrl}>`
+renders data URLs natively, so consumer components don't care what MIME type
+the bytes are.
 
 ---
 

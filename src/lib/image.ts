@@ -4,11 +4,25 @@
 export const MAX_PHOTO_BYTES = 700_000
 export const MAX_INPUT_BYTES = 15 * 1024 * 1024
 
+// iOS Safari < 17 silently falls back to PNG when asked to encode WebP, so we
+// have to probe with a 1×1 canvas before committing to a MIME type.
+let webpEncodeSupported: boolean | null = null
+function supportsWebpEncode(): boolean {
+  if (webpEncodeSupported !== null) return webpEncodeSupported
+  const probe = document.createElement('canvas')
+  probe.width = 1
+  probe.height = 1
+  webpEncodeSupported = probe
+    .toDataURL('image/webp')
+    .startsWith('data:image/webp')
+  return webpEncodeSupported
+}
+
 // Draws the file onto a canvas (downscaled so the longest edge is at most
-// `maxDimension`) and encodes as WebP with progressively lower quality until
-// the resulting data URL is small enough. Throws if WebP isn't supported or
-// the result still exceeds MAX_PHOTO_BYTES at the lowest tried quality.
-export async function fileToWebpDataUrl(
+// `maxDimension`) and encodes with progressively lower quality until the
+// resulting data URL is small enough. Prefers WebP; falls back to JPEG on
+// browsers that don't support WebP canvas encoding.
+export async function fileToCompressedDataUrl(
   file: File,
   maxDimension = 1280,
 ): Promise<string> {
@@ -37,11 +51,9 @@ export async function fileToWebpDataUrl(
     if (!ctx) throw new Error('Canvas 2D context unavailable')
     ctx.drawImage(img, 0, 0, w, h)
 
+    const mime = supportsWebpEncode() ? 'image/webp' : 'image/jpeg'
     for (const quality of [0.82, 0.7, 0.55, 0.4]) {
-      const url = canvas.toDataURL('image/webp', quality)
-      if (!url.startsWith('data:image/webp')) {
-        throw new Error('This browser cannot encode WebP')
-      }
+      const url = canvas.toDataURL(mime, quality)
       if (url.length <= MAX_PHOTO_BYTES) return url
     }
     throw new Error(
