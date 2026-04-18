@@ -231,20 +231,20 @@ Access via `import.meta.env.VITE_FIREBASE_*`.
 
 ## Game photos (inline compressed data URL)
 
-Game photos are stored inline as a compressed `data:` URL in the game doc's
-`photoUrl` field — **not** Firebase Storage. The client resizes (longest edge
-≤ 1280 px) and re-encodes via `<canvas>.toDataURL` in `src/lib/image.ts`,
-stepping down through quality tiers until the encoded string fits inside the
-`MAX_PHOTO_BYTES` budget (~700 KB) that leaves room for the rest of the
-Firestore doc (1 MiB cap). WebP is preferred; iOS Safari < 17 can't encode
-WebP from a canvas (it silently falls back to PNG), so on those browsers
-`fileToCompressedDataUrl` falls back to JPEG instead.
+Game photos are stored inline as a compressed JPEG `data:` URL in the game
+doc's `photoUrl` field — **not** Firebase Storage. The client resizes
+(longest edge ≤ 1280 px) and re-encodes via `<canvas>.toDataURL('image/jpeg',
+q)` in `src/lib/image.ts`, stepping down through quality tiers until the
+encoded string fits inside the `MAX_PHOTO_BYTES` budget (~700 KB) that
+leaves room for the rest of the Firestore doc (1 MiB cap). JPEG (not WebP)
+because iOS Safari < 17 silently falls back to PNG when asked to encode WebP
+from a canvas, blowing the size budget.
 
 Flow: `recordGame` writes the game doc first (getting a `gameId`); if the
 user attached a photo, the form encodes it via `fileToCompressedDataUrl` and
 then `setGamePhoto` patches `photoUrl` onto the doc. `<img src={photoUrl}>`
-renders data URLs natively, so consumer components don't care what MIME type
-the bytes are.
+renders data URLs natively, so consumer components don't care about the MIME
+type.
 
 ---
 
