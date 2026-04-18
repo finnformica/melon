@@ -15,6 +15,7 @@ import LeaguesPage from '@/features/leagues/LeaguesPage'
 import NotFoundPage from '@/features/leagues/NotFoundPage'
 import GlobalLeaderboardPage from '@/features/standings/GlobalLeaderboardPage'
 import PlayerProfilePage from '@/features/standings/PlayerProfilePage'
+import QrCodePage from '@/features/qr/QrCodePage'
 
 export const router = createBrowserRouter([
   {
@@ -45,6 +46,7 @@ export const router = createBrowserRouter([
           { path: 'leagues/:leagueId/settings', element: <LeagueSettingsPage /> },
           { path: 'leaderboard', element: <GlobalLeaderboardPage /> },
           { path: 'players/:uid', element: <PlayerProfilePage /> },
+          { path: 'qr', element: <QrCodePage /> },
           { path: '*', element: <NotFoundPage /> },
         ],
       },
