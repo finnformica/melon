@@ -11,6 +11,7 @@ import { useEffect } from 'react'
 
 import { db } from '@/lib/firebase'
 import { getGamesByLeague } from '@/lib/firestore'
+import { normalizeGame } from '@/lib/gameSchema'
 import type { Game } from '@/types'
 
 export function useGames(
@@ -30,7 +31,9 @@ export function useGames(
       ? query(collection(db, 'games'), ...constraints, fsLimit(limit))
       : query(collection(db, 'games'), ...constraints)
     const unsubscribe = onSnapshot(q, (snap) => {
-      const games = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Game)
+      const games = snap.docs.map((d) =>
+        normalizeGame({ id: d.id, ...d.data() }),
+      )
       queryClient.setQueryData(['games', leagueId, limit ?? null], games)
     })
     return unsubscribe

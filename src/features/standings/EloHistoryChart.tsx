@@ -13,6 +13,7 @@ import {
 
 import { Skeleton } from '@/components/ui/skeleton'
 import { db } from '@/lib/firebase'
+import { normalizeGame } from '@/lib/gameSchema'
 import type { Game } from '@/types'
 
 interface Point {
@@ -22,14 +23,35 @@ interface Point {
 }
 
 async function fetchUserGames(uid: string): Promise<Game[]> {
-  const [wonSnap, lostSnap] = await Promise.all([
+  // Two queries to cover the unified schema (winnerIds / loserIds arrays).
+  // Also query the legacy scalar fields so pre-migration docs still surface
+  // on the chart; normalizeGame harmonises the shapes.
+  const [
+    wonSnap,
+    lostSnap,
+    wonLegacySnap,
+    lostLegacySnap,
+  ] = await Promise.all([
+    getDocs(
+      query(collection(db, 'games'), where('winnerIds', 'array-contains', uid)),
+    ),
+    getDocs(
+      query(collection(db, 'games'), where('loserIds', 'array-contains', uid)),
+    ),
     getDocs(query(collection(db, 'games'), where('winnerId', '==', uid))),
     getDocs(query(collection(db, 'games'), where('loserId', '==', uid))),
   ])
-  const games = [
-    ...wonSnap.docs.map((d) => ({ id: d.id, ...d.data() }) as Game),
-    ...lostSnap.docs.map((d) => ({ id: d.id, ...d.data() }) as Game),
-  ]
+
+  const seen = new Set<string>()
+  const games: Game[] = []
+  for (const snap of [wonSnap, lostSnap, wonLegacySnap, lostLegacySnap]) {
+    for (const d of snap.docs) {
+      if (seen.has(d.id)) continue
+      seen.add(d.id)
+      games.push(normalizeGame({ id: d.id, ...d.data() }))
+    }
+  }
+
   return games.sort(
     (a, b) => (a.playedAt?.toMillis() ?? 0) - (b.playedAt?.toMillis() ?? 0),
   )
@@ -38,17 +60,12 @@ async function fetchUserGames(uid: string): Promise<Game[]> {
 function buildPoints(uid: string, games: Game[], leagueId?: string): Point[] {
   const points: Point[] = []
   for (const game of games) {
+    const snap = game.playerElo[uid]
+    if (!snap) continue
     const t = game.playedAt?.toMillis() ?? Date.now()
-    const isWinner = game.winnerId === uid
-    const globalElo = isWinner
-      ? game.winnerGlobalEloAfter
-      : game.loserGlobalEloAfter
-    let leagueElo: number | null = null
-    if (leagueId && game.leagueId === leagueId) {
-      leagueElo = isWinner
-        ? game.winnerLeagueEloAfter
-        : game.loserLeagueEloAfter
-    }
+    const globalElo = snap.globalAfter
+    const leagueElo =
+      leagueId && game.leagueId === leagueId ? snap.leagueAfter : null
     points.push({ t, globalElo, leagueElo })
   }
   return points

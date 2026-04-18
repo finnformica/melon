@@ -1,5 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useMemo, useState } from 'react'
+import { ImagePlus, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -14,6 +15,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -32,13 +34,31 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useLeague } from '@/hooks/useLeague'
+import type { LeagueMember } from '@/hooks/useMembers'
 import { useMembers } from '@/hooks/useMembers'
-import { K_GLOBAL, K_LEAGUE, calculateElo } from '@/lib/elo'
-import { recordGame } from '@/lib/firestore'
+import { K_GLOBAL, K_LEAGUE, calculateTeamElo } from '@/lib/elo'
+import { deltaColorClass, formatDelta } from '@/lib/format'
+import { recordGame, setGamePhoto } from '@/lib/firestore'
 import { recordGameInputSchema } from '@/lib/schemas'
 import type { RecordGameInput } from '@/lib/schemas'
-import { deltaColorClass, formatDelta } from '@/lib/format'
+import { PHOTO_MAX_BYTES, uploadGamePhoto } from '@/lib/storage'
+
+type GameType = '1v1' | 'team'
+
+function memberName(m: LeagueMember): string {
+  return m.user?.displayName || m.user?.email || 'Unknown'
+}
+
+interface TeamDelta {
+  uid: string
+  name: string
+  globalBefore: number
+  globalAfter: number
+  leagueBefore: number
+  leagueAfter: number
+}
 
 export default function RecordGamePage() {
   const { leagueId } = useParams<{ leagueId: string }>()
@@ -48,66 +68,176 @@ export default function RecordGamePage() {
 
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [photoFile, setPhotoFile] = useState<File | null>(null)
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (!photoFile) {
+      setPhotoPreview(null)
+      return
+    }
+    const url = URL.createObjectURL(photoFile)
+    setPhotoPreview(url)
+    return () => URL.revokeObjectURL(url)
+  }, [photoFile])
 
   const {
     handleSubmit,
     setValue,
     watch,
     formState: { errors, isValid },
+    reset,
   } = useForm<RecordGameInput>({
     resolver: zodResolver(recordGameInputSchema),
-    defaultValues: { leagueId: leagueId ?? '', winnerId: '', loserId: '' },
+    defaultValues: {
+      leagueId: leagueId ?? '',
+      gameType: '1v1',
+      winnerIds: [],
+      loserIds: [],
+    },
     mode: 'onChange',
   })
 
-  const winnerId = watch('winnerId')
-  const loserId = watch('loserId')
+  const gameType = watch('gameType')
+  const rawWinnerIds = watch('winnerIds')
+  const rawLoserIds = watch('loserIds')
+  const winnerIds = useMemo(() => rawWinnerIds ?? [], [rawWinnerIds])
+  const loserIds = useMemo(() => rawLoserIds ?? [], [rawLoserIds])
+
+  useEffect(() => {
+    if (leagueId) {
+      setValue('leagueId', leagueId)
+    }
+  }, [leagueId, setValue])
+
+  const memberByUid = useMemo(() => {
+    const map = new Map<string, LeagueMember>()
+    for (const m of members ?? []) map.set(m.membership.userId, m)
+    return map
+  }, [members])
+
+  const availableForWinner = useMemo(
+    () => (members ?? []).filter((m) => !loserIds.includes(m.membership.userId)),
+    [members, loserIds],
+  )
+  const availableForLoser = useMemo(
+    () =>
+      (members ?? []).filter((m) => !winnerIds.includes(m.membership.userId)),
+    [members, winnerIds],
+  )
+
+  function switchMode(next: GameType) {
+    // When switching to 1v1, keep at most one uid per side. When switching to
+    // Team, keep as-is.
+    if (next === '1v1') {
+      setValue('winnerIds', winnerIds.slice(0, 1), { shouldValidate: true })
+      setValue('loserIds', loserIds.slice(0, 1), { shouldValidate: true })
+    }
+    setValue('gameType', next, { shouldValidate: true })
+  }
+
+  function addPlayer(side: 'winnerIds' | 'loserIds', uid: string) {
+    if (!uid) return
+    const current = side === 'winnerIds' ? winnerIds : loserIds
+    if (current.includes(uid)) return
+    if (gameType === '1v1') {
+      setValue(side, [uid], { shouldValidate: true })
+    } else {
+      setValue(side, [...current, uid], { shouldValidate: true })
+    }
+  }
+
+  function removePlayer(side: 'winnerIds' | 'loserIds', uid: string) {
+    const current = side === 'winnerIds' ? winnerIds : loserIds
+    setValue(
+      side,
+      current.filter((id) => id !== uid),
+      { shouldValidate: true },
+    )
+  }
 
   const deltas = useMemo(() => {
-    if (!winnerId || !loserId || winnerId === loserId || !members) return null
-    const winner = members.find((m) => m.membership.userId === winnerId)
-    const loser = members.find((m) => m.membership.userId === loserId)
-    if (!winner?.user || !loser?.user) return null
-
-    const global = calculateElo(
-      winner.user.globalElo,
-      loser.user.globalElo,
-      K_GLOBAL,
-    )
-    const league = calculateElo(
-      winner.membership.leagueElo,
-      loser.membership.leagueElo,
-      K_LEAGUE,
-    )
-
-    return {
-      winnerName:
-        winner.user.displayName || winner.user.email || 'Winner',
-      loserName: loser.user.displayName || loser.user.email || 'Loser',
-      winnerGlobal: {
-        before: winner.user.globalElo,
-        after: global.winner,
-      },
-      loserGlobal: {
-        before: loser.user.globalElo,
-        after: global.loser,
-      },
-      winnerLeague: {
-        before: winner.membership.leagueElo,
-        after: league.winner,
-      },
-      loserLeague: {
-        before: loser.membership.leagueElo,
-        after: league.loser,
-      },
+    if (!members) return null
+    if (winnerIds.length === 0 || loserIds.length === 0) return null
+    const winners = winnerIds
+      .map((uid) => memberByUid.get(uid))
+      .filter((m): m is LeagueMember => Boolean(m?.user))
+    const losers = loserIds
+      .map((uid) => memberByUid.get(uid))
+      .filter((m): m is LeagueMember => Boolean(m?.user))
+    if (winners.length !== winnerIds.length || losers.length !== loserIds.length) {
+      return null
     }
-  }, [winnerId, loserId, members])
+
+    const wGlobal = winners.map((m) => m.user!.globalElo)
+    const lGlobal = losers.map((m) => m.user!.globalElo)
+    const wLeague = winners.map((m) => m.membership.leagueElo)
+    const lLeague = losers.map((m) => m.membership.leagueElo)
+
+    const globalRes = calculateTeamElo(wGlobal, lGlobal, K_GLOBAL)
+    const leagueRes = calculateTeamElo(wLeague, lLeague, K_LEAGUE)
+
+    const winnersOut: TeamDelta[] = winners.map((m) => ({
+      uid: m.membership.userId,
+      name: memberName(m),
+      globalBefore: m.user!.globalElo,
+      globalAfter: m.user!.globalElo + globalRes.winnerDelta,
+      leagueBefore: m.membership.leagueElo,
+      leagueAfter: m.membership.leagueElo + leagueRes.winnerDelta,
+    }))
+    const losersOut: TeamDelta[] = losers.map((m) => ({
+      uid: m.membership.userId,
+      name: memberName(m),
+      globalBefore: m.user!.globalElo,
+      globalAfter: m.user!.globalElo + globalRes.loserDelta,
+      leagueBefore: m.membership.leagueElo,
+      leagueAfter: m.membership.leagueElo + leagueRes.loserDelta,
+    }))
+
+    return { winners: winnersOut, losers: losersOut }
+  }, [members, memberByUid, winnerIds, loserIds])
+
+  function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0] ?? null
+    if (!file) return
+    if (file.size > PHOTO_MAX_BYTES) {
+      toast.error('Photo must be 5 MB or smaller')
+      e.target.value = ''
+      return
+    }
+    if (!file.type.startsWith('image/')) {
+      toast.error('Only image files are allowed')
+      e.target.value = ''
+      return
+    }
+    setPhotoFile(file)
+  }
+
+  function clearPhoto() {
+    setPhotoFile(null)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
 
   async function onConfirmedSubmit(data: RecordGameInput) {
     setSubmitting(true)
     try {
-      await recordGame(data)
+      const gameId = await recordGame(data)
+      if (photoFile) {
+        try {
+          const url = await uploadGamePhoto(photoFile, data.leagueId, gameId)
+          await setGamePhoto(gameId, url)
+        } catch (err) {
+          toast.error(
+            err instanceof Error
+              ? `Game recorded, but photo upload failed: ${err.message}`
+              : 'Game recorded, but photo upload failed',
+          )
+        }
+      }
       toast.success('Game recorded')
+      reset()
+      setPhotoFile(null)
       navigate(`/leagues/${data.leagueId}/games`)
     } catch (err) {
       toast.error(
@@ -152,8 +282,8 @@ export default function RecordGamePage() {
         <CardHeader>
           <CardTitle>Record a game — {league.name}</CardTitle>
           <CardDescription>
-            Select the winner and loser. ELO is updated atomically on both
-            tracks.
+            Pick a format, assign players to each side, and optionally attach a
+            photo. ELO updates atomically on both global and league tracks.
           </CardDescription>
         </CardHeader>
         <form
@@ -161,130 +291,100 @@ export default function RecordGamePage() {
             setConfirmOpen(true)
           })}
         >
-          <CardContent className="flex flex-col gap-4">
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="winner">Winner</Label>
-              <Select
-                value={winnerId}
-                onValueChange={(v) =>
-                  setValue('winnerId', v, { shouldValidate: true })
-                }
+          <CardContent className="flex flex-col gap-5">
+            <div className="flex flex-col gap-2">
+              <Label>Format</Label>
+              <Tabs
+                value={gameType}
+                onValueChange={(v) => switchMode(v as GameType)}
               >
-                <SelectTrigger id="winner">
-                  <SelectValue placeholder="Pick winner" />
-                </SelectTrigger>
-                <SelectContent>
-                  {members.map(({ membership, user }) => (
-                    <SelectItem
-                      key={membership.userId}
-                      value={membership.userId}
-                    >
-                      {user?.displayName || user?.email || 'Unknown'}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                <TabsList className="w-full">
+                  <TabsTrigger value="1v1">1v1</TabsTrigger>
+                  <TabsTrigger value="team">Team</TabsTrigger>
+                </TabsList>
+              </Tabs>
             </div>
 
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="loser">Loser</Label>
-              <Select
-                value={loserId}
-                onValueChange={(v) =>
-                  setValue('loserId', v, { shouldValidate: true })
-                }
-              >
-                <SelectTrigger id="loser">
-                  <SelectValue placeholder="Pick loser" />
-                </SelectTrigger>
-                <SelectContent>
-                  {members
-                    .filter((m) => m.membership.userId !== winnerId)
-                    .map(({ membership, user }) => (
-                      <SelectItem
-                        key={membership.userId}
-                        value={membership.userId}
-                      >
-                        {user?.displayName || user?.email || 'Unknown'}
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
-              {errors.loserId && (
-                <p className="text-sm text-destructive">
-                  {errors.loserId.message}
-                </p>
+            <TeamPicker
+              label={gameType === '1v1' ? 'Winner' : 'Winning team'}
+              side="winnerIds"
+              selectedIds={winnerIds}
+              options={availableForWinner}
+              onAdd={(uid) => addPlayer('winnerIds', uid)}
+              onRemove={(uid) => removePlayer('winnerIds', uid)}
+              allowMultiple={gameType === 'team'}
+              memberByUid={memberByUid}
+            />
+
+            <TeamPicker
+              label={gameType === '1v1' ? 'Loser' : 'Losing team'}
+              side="loserIds"
+              selectedIds={loserIds}
+              options={availableForLoser}
+              onAdd={(uid) => addPlayer('loserIds', uid)}
+              onRemove={(uid) => removePlayer('loserIds', uid)}
+              allowMultiple={gameType === 'team'}
+              memberByUid={memberByUid}
+            />
+
+            {errors.loserIds && (
+              <p className="text-sm text-destructive">
+                {errors.loserIds.message}
+              </p>
+            )}
+            {errors.winnerIds && (
+              <p className="text-sm text-destructive">
+                {errors.winnerIds.message}
+              </p>
+            )}
+
+            <div className="flex flex-col gap-2">
+              <Label>Photo (optional)</Label>
+              {photoPreview ? (
+                <div className="relative w-fit">
+                  <img
+                    src={photoPreview}
+                    alt="Game photo preview"
+                    className="max-h-40 rounded-md border object-cover"
+                  />
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="icon"
+                    className="absolute right-1 top-1 h-6 w-6"
+                    onClick={clearPhoto}
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-fit"
+                >
+                  <ImagePlus className="mr-2 h-4 w-4" /> Attach photo
+                </Button>
               )}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handlePhotoChange}
+              />
+              <p className="text-xs text-muted-foreground">
+                JPG, PNG or WEBP. Max 5 MB.
+              </p>
             </div>
 
             {deltas && (
               <div className="space-y-2 rounded-lg border p-3 text-sm">
                 <p className="font-medium">Rating changes</p>
-                <div className="grid grid-cols-2 gap-y-1 text-xs">
-                  <span className="text-muted-foreground">
-                    {deltas.winnerName} · global
-                  </span>
-                  <span
-                    className={`text-right font-mono ${deltaColorClass(
-                      deltas.winnerGlobal.before,
-                      deltas.winnerGlobal.after,
-                    )}`}
-                  >
-                    {deltas.winnerGlobal.before} → {deltas.winnerGlobal.after} (
-                    {formatDelta(
-                      deltas.winnerGlobal.before,
-                      deltas.winnerGlobal.after,
-                    )}
-                    )
-                  </span>
-                  <span className="text-muted-foreground">
-                    {deltas.winnerName} · league
-                  </span>
-                  <span
-                    className={`text-right font-mono ${deltaColorClass(
-                      deltas.winnerLeague.before,
-                      deltas.winnerLeague.after,
-                    )}`}
-                  >
-                    {deltas.winnerLeague.before} → {deltas.winnerLeague.after} (
-                    {formatDelta(
-                      deltas.winnerLeague.before,
-                      deltas.winnerLeague.after,
-                    )}
-                    )
-                  </span>
-                  <span className="text-muted-foreground">
-                    {deltas.loserName} · global
-                  </span>
-                  <span
-                    className={`text-right font-mono ${deltaColorClass(
-                      deltas.loserGlobal.before,
-                      deltas.loserGlobal.after,
-                    )}`}
-                  >
-                    {deltas.loserGlobal.before} → {deltas.loserGlobal.after} (
-                    {formatDelta(
-                      deltas.loserGlobal.before,
-                      deltas.loserGlobal.after,
-                    )}
-                    )
-                  </span>
-                  <span className="text-muted-foreground">
-                    {deltas.loserName} · league
-                  </span>
-                  <span
-                    className={`text-right font-mono ${deltaColorClass(
-                      deltas.loserLeague.before,
-                      deltas.loserLeague.after,
-                    )}`}
-                  >
-                    {deltas.loserLeague.before} → {deltas.loserLeague.after} (
-                    {formatDelta(
-                      deltas.loserLeague.before,
-                      deltas.loserLeague.after,
-                    )}
-                    )
-                  </span>
+                <div className="flex flex-col gap-3 text-xs">
+                  <TeamDeltaBlock title="Winners" rows={deltas.winners} />
+                  <TeamDeltaBlock title="Losers" rows={deltas.losers} />
                 </div>
               </div>
             )}
@@ -311,16 +411,14 @@ export default function RecordGamePage() {
             <AlertDialogTitle>Confirm game result</AlertDialogTitle>
             <AlertDialogDescription>
               {deltas &&
-                `${deltas.winnerName} defeats ${deltas.loserName}. Games are immutable — this cannot be undone.`}
+                `${summarise(deltas.winners)} beat ${summarise(deltas.losers)}. Games are immutable — this cannot be undone.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={submitting}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               disabled={submitting}
-              onClick={() =>
-                void handleSubmit(onConfirmedSubmit)()
-              }
+              onClick={() => void handleSubmit(onConfirmedSubmit)()}
             >
               Confirm
             </AlertDialogAction>
@@ -328,5 +426,120 @@ export default function RecordGamePage() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  )
+}
+
+function summarise(rows: TeamDelta[]): string {
+  if (rows.length === 1) return rows[0].name
+  if (rows.length === 2) return `${rows[0].name} & ${rows[1].name}`
+  return `Team of ${rows.length}`
+}
+
+function TeamPicker({
+  label,
+  side,
+  selectedIds,
+  options,
+  onAdd,
+  onRemove,
+  allowMultiple,
+  memberByUid,
+}: {
+  label: string
+  side: 'winnerIds' | 'loserIds'
+  selectedIds: string[]
+  options: LeagueMember[]
+  onAdd: (uid: string) => void
+  onRemove: (uid: string) => void
+  allowMultiple: boolean
+  memberByUid: Map<string, LeagueMember>
+}) {
+  const selectable = options.filter(
+    (m) => !selectedIds.includes(m.membership.userId),
+  )
+  const showPicker = allowMultiple || selectedIds.length === 0
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label htmlFor={`${side}-select`}>{label}</Label>
+      {selectedIds.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {selectedIds.map((uid) => {
+            const m = memberByUid.get(uid)
+            return (
+              <Badge
+                key={uid}
+                variant="secondary"
+                className="flex items-center gap-1"
+              >
+                {m ? memberName(m) : uid}
+                <button
+                  type="button"
+                  onClick={() => onRemove(uid)}
+                  className="rounded-full p-0.5 transition-colors hover:bg-background/40"
+                  aria-label={`Remove ${m ? memberName(m) : uid}`}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </Badge>
+            )
+          })}
+        </div>
+      )}
+      {showPicker && (
+        <Select
+          key={selectedIds.join(',')}
+          value=""
+          onValueChange={(v) => onAdd(v)}
+        >
+          <SelectTrigger id={`${side}-select`}>
+            <SelectValue
+              placeholder={allowMultiple ? 'Add player…' : 'Pick player'}
+            />
+          </SelectTrigger>
+          <SelectContent>
+            {selectable.map(({ membership, user }) => (
+              <SelectItem
+                key={membership.userId}
+                value={membership.userId}
+              >
+                {user?.displayName || user?.email || 'Unknown'}
+              </SelectItem>
+            ))}
+            {selectable.length === 0 && (
+              <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                No available players
+              </div>
+            )}
+          </SelectContent>
+        </Select>
+      )}
+    </div>
+  )
+}
+
+function TeamDeltaBlock({ title, rows }: { title: string; rows: TeamDelta[] }) {
+  return (
+    <div className="space-y-1">
+      <p className="text-xs font-medium text-muted-foreground">{title}</p>
+      <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 gap-y-1 font-mono">
+        {rows.map((r) => (
+          <RatingRow key={r.uid} row={r} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function RatingRow({ row }: { row: TeamDelta }) {
+  return (
+    <>
+      <span className="truncate text-muted-foreground">{row.name}</span>
+      <span className={deltaColorClass(row.globalBefore, row.globalAfter)}>
+        G {row.globalBefore}→{row.globalAfter} ({formatDelta(row.globalBefore, row.globalAfter)})
+      </span>
+      <span className={deltaColorClass(row.leagueBefore, row.leagueAfter)}>
+        L {row.leagueBefore}→{row.leagueAfter} ({formatDelta(row.leagueBefore, row.leagueAfter)})
+      </span>
+    </>
   )
 }

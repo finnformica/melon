@@ -27,6 +27,19 @@ service cloud.firestore {
       return isLeagueOwner(leagueId) || isLeagueAdmin(leagueId);
     }
 
+    // True when every uid in `uids` has a membership in the given league.
+    // Bounded in length by the client (see recordGame) so this stays cheap.
+    function allAreLeagueMembers(leagueId, uids) {
+      return uids.size() > 0 && uids.size() <= 16
+        && !(false in uids.map(uid,
+          exists(/databases/$(database)/documents/memberships/$(leagueId + '_' + uid))
+        ));
+    }
+
+    function gameParticipants(data) {
+      return data.winnerIds.concat(data.loserIds);
+    }
+
     match /users/{uid} {
       allow read: if signedIn();
 
@@ -38,7 +51,7 @@ service cloud.firestore {
         && request.resource.data.globalLosses == 0;
 
       // Own user can update their profile; other signed-in users can only touch ELO/W/L
-      // (this is how recordGame updates the opposite player's global rating).
+      // (this is how recordGame updates the opposite side's global rating).
       allow update: if signedIn() && (
         request.auth.uid == uid
         || request.resource.data.diff(resource.data).affectedKeys()
@@ -102,32 +115,50 @@ service cloud.firestore {
       // No email / PII on the game doc — names are denormalised display names.
       allow read: if true;
 
-      // Caller must be in the league; both players must also be members.
-      // Denormalised display fields are required to keep the public card safe.
+      // Unified schema: winnerIds[] and loserIds[] arrays (length 1 for 1v1),
+      // per-player playerElo map, optional photoUrl. Writer must be a
+      // participant; every participant must be a league member.
       allow create: if signedIn()
+        && request.resource.data.gameType in ['1v1', 'team']
+        && request.resource.data.winnerIds is list
+        && request.resource.data.loserIds is list
+        && request.resource.data.winnerIds.size() > 0
+        && request.resource.data.loserIds.size() > 0
+        && (request.auth.uid in request.resource.data.winnerIds
+            || request.auth.uid in request.resource.data.loserIds)
         && isLeagueMember(request.resource.data.leagueId)
-        && exists(/databases/$(database)/documents/memberships/$(request.resource.data.leagueId + '_' + request.resource.data.winnerId))
-        && exists(/databases/$(database)/documents/memberships/$(request.resource.data.leagueId + '_' + request.resource.data.loserId))
+        && allAreLeagueMembers(
+             request.resource.data.leagueId,
+             gameParticipants(request.resource.data)
+           )
+        && request.resource.data.playerElo is map
+        && request.resource.data.displayNames is map
         && request.resource.data.leagueName is string
-        && request.resource.data.sport is string
-        && request.resource.data.winnerDisplayName is string
-        && request.resource.data.loserDisplayName is string;
+        && request.resource.data.sport is string;
 
-      // ELO-snapshot rewrites are allowed during a recompute triggered by a
-      // game deletion. Only winner/loser/admin/owner may do this, and only the
-      // league-ELO snapshot fields may change.
+      // Photo attachment (immediate follow-up to recordGame). Participants
+      // only; only the photoUrl field may change.
       allow update: if signedIn()
-        && (request.auth.uid == resource.data.winnerId
-            || request.auth.uid == resource.data.loserId
+        && (request.auth.uid in resource.data.winnerIds
+            || request.auth.uid in resource.data.loserIds
             || isLeagueAdminOrOwner(resource.data.leagueId))
         && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['winnerLeagueEloBefore', 'winnerLeagueEloAfter',
-                      'loserLeagueEloBefore', 'loserLeagueEloAfter']);
+            .hasOnly(['photoUrl'])
+        && request.resource.data.photoUrl is string;
 
-      // Winner, loser, or league admin/owner may delete.
+      // ELO-snapshot rewrite during a deleteGame recompute. Participants /
+      // admins / owner only; only the playerElo map may change.
+      allow update: if signedIn()
+        && (request.auth.uid in resource.data.winnerIds
+            || request.auth.uid in resource.data.loserIds
+            || isLeagueAdminOrOwner(resource.data.leagueId))
+        && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['playerElo']);
+
+      // Any participant or league admin/owner may delete.
       allow delete: if signedIn() && (
-        request.auth.uid == resource.data.winnerId
-        || request.auth.uid == resource.data.loserId
+        request.auth.uid in resource.data.winnerIds
+        || request.auth.uid in resource.data.loserIds
         || isLeagueAdminOrOwner(resource.data.leagueId)
       );
     }

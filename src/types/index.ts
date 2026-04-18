@@ -37,7 +37,37 @@ export interface Membership {
 
 export type LeagueRole = 'owner' | 'admin' | 'member'
 
+export type GameType = '1v1' | 'team'
+
+export interface PlayerEloSnapshot {
+  globalBefore: number
+  globalAfter: number
+  leagueBefore: number
+  leagueAfter: number
+}
+
+// Unified game schema. A 1v1 game is just a team game with single-member
+// sides; the `gameType` field records user intent for display.
+// Legacy docs with scalar winnerId/loserId are read through normalizeGame
+// (src/lib/gameSchema.ts); they never leak into consumer code.
 export interface Game {
+  id: string
+  leagueId: string
+  gameType: GameType
+  winnerIds: string[]
+  loserIds: string[]
+  playerElo: Record<string, PlayerEloSnapshot>
+  kFactorGlobal: number
+  kFactorLeague: number
+  photoUrl?: string
+  playedAt: Timestamp
+  // Denormalised display info for the public share card.
+  leagueName?: string
+  sport?: string
+  displayNames?: Record<string, string>
+}
+
+export interface LegacyGame {
   id: string
   leagueId: string
   winnerId: string
@@ -53,8 +83,6 @@ export interface Game {
   kFactorGlobal: number
   kFactorLeague: number
   playedAt: Timestamp
-  // Denormalised display fields for the public share card (optional on
-  // pre-Phase 11 docs; always present on new games).
   leagueName?: string
   sport?: string
   winnerDisplayName?: string

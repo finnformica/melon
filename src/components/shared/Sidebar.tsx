@@ -2,6 +2,7 @@ import {
   ChevronDown,
   ChevronRight,
   CircleDot,
+  Home,
   LayoutGrid,
   LogOut,
   Plus,
@@ -59,6 +60,20 @@ export function Sidebar({ className }: { className?: string }) {
 
       {/* Nav */}
       <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2 py-3">
+        <Link
+          to="/"
+          className={cn(
+            'flex items-center gap-3 rounded-md py-2 text-sm transition-colors',
+            'justify-center px-0 lg:justify-start lg:px-2',
+            'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+            location.pathname === '/' &&
+              'bg-sidebar-accent text-sidebar-accent-foreground font-medium',
+          )}
+        >
+          <Home className="h-4 w-4 shrink-0" />
+          <span className="hidden lg:block">Home</span>
+        </Link>
+
         <button
           onClick={() => setLeaguesOpen(!leaguesOpen)}
           className={cn(

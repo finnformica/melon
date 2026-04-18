@@ -1,10 +1,11 @@
-import { Navigate, createBrowserRouter } from 'react-router-dom'
+import { createBrowserRouter } from 'react-router-dom'
 
 import { AppLayout } from '@/components/shared/AppLayout'
 import { ProtectedRoute } from '@/components/shared/ProtectedRoute'
 import LoginPage from '@/features/auth/LoginPage'
 import GameCardPage from '@/features/games/GameCardPage'
 import RecordGamePage from '@/features/games/RecordGamePage'
+import HomePage from '@/features/home/HomePage'
 import CreateLeaguePage from '@/features/leagues/CreateLeaguePage'
 import AutoJoinLeaguePage from '@/features/leagues/AutoJoinLeaguePage'
 import JoinLeaguePage from '@/features/leagues/JoinLeaguePage'
@@ -32,7 +33,7 @@ export const router = createBrowserRouter([
       {
         element: <AppLayout />,
         children: [
-          { index: true, element: <Navigate to="/leagues" replace /> },
+          { index: true, element: <HomePage /> },
           { path: 'leagues', element: <LeaguesPage /> },
           { path: 'leagues/create', element: <CreateLeaguePage /> },
           { path: 'leagues/join', element: <JoinLeaguePage /> },

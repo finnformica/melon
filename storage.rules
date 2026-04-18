@@ -1,0 +1,38 @@
+rules_version = '2';
+
+// Photo uploads for game records. Path: games/{leagueId}/{gameId}/photo.{ext}.
+// Read is open to any authenticated member of the league (for in-app viewing).
+// Write requires the uploader to be a participant of the referenced game and
+// respects a 5MB + image/* client-side limit.
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isLeagueMember(leagueId) {
+      return exists(
+        /databases/(default)/documents/memberships/$(leagueId + '_' + request.auth.uid)
+      );
+    }
+
+    function isGameParticipant(gameId) {
+      return exists(/databases/(default)/documents/games/$(gameId))
+        && (request.auth.uid in get(/databases/(default)/documents/games/$(gameId)).data.winnerIds
+            || request.auth.uid in get(/databases/(default)/documents/games/$(gameId)).data.loserIds);
+    }
+
+    match /games/{leagueId}/{gameId}/{fileName} {
+      allow read: if signedIn() && isLeagueMember(leagueId);
+
+      allow write: if signedIn()
+        && isLeagueMember(leagueId)
+        && isGameParticipant(gameId)
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+
+      allow delete: if signedIn() && isGameParticipant(gameId);
+    }
+  }
+}

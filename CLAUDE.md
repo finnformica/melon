@@ -49,9 +49,13 @@ Both are calculated and written atomically in a single Firestore `writeBatch` wh
 
 The many-to-many between users and leagues is resolved via a `memberships` collection. This is where per-league ELO, wins, and losses live. Do not store league-specific stats on the `users` document.
 
-### Game records are immutable audit logs
+### Game records are (mostly) immutable audit logs
 
-Once written, game documents are never edited. They store ELO snapshots (before/after, both global and league) for both players so rating history can be graphed without recomputation.
+Once written, game documents are not edited by users. They store per-player ELO snapshots (before/after, both global and league) so rating history can be graphed without recomputation. Two narrow exceptions: (1) a single post-create patch sets `photoUrl` after the optional photo upload completes, (2) `deleteGame` recomputes the `playerElo` map on every subsequent game in the league to keep standings consistent.
+
+### 1v1 and team games share one schema
+
+A game can be `gameType: '1v1'` or `gameType: 'team'`. Both persist as `winnerIds[]` / `loserIds[]` arrays plus a `playerElo` map keyed by uid. A 1v1 is just a team game with single-member sides; the `gameType` field preserves user intent for display. Team ELO uses `calculateTeamElo` in `src/lib/elo.ts` — team rating = mean of members, standard ELO on the two means, same delta applied to every member of each team.
 
 ### Invite codes
 
@@ -94,24 +98,37 @@ leagueLosses: number       // default 0
 joinedAt: Timestamp
 ```
 
-### `games/{gameId}`
+### `games/{gameId}` (unified schema)
 
 ```
 leagueId: string
-winnerId: string
-loserId: string
-winnerGlobalEloBefore: number
-winnerGlobalEloAfter: number
-loserGlobalEloBefore: number
-loserGlobalEloAfter: number
-winnerLeagueEloBefore: number
-winnerLeagueEloAfter: number
-loserLeagueEloBefore: number
-loserLeagueEloAfter: number
+gameType: '1v1' | 'team'
+winnerIds: string[]          // length 1 for 1v1, N for team
+loserIds: string[]
+playerElo: {
+  [uid]: {
+    globalBefore: number
+    globalAfter: number
+    leagueBefore: number
+    leagueAfter: number
+  }
+}
 kFactorGlobal: number
 kFactorLeague: number
+photoUrl?: string            // Firebase Storage download URL, patched on post-create
 playedAt: Timestamp
+// Denormalised for the public share card:
+leagueName?: string
+sport?: string
+displayNames?: { [uid]: string }
 ```
+
+**Legacy docs** (scalar `winnerId`/`loserId` + flat ELO fields) still exist in
+Firestore. They are converted to the unified shape on read via `normalizeGame`
+in `src/lib/gameSchema.ts`. `useGames`, `getGame`, `getGamesByLeague`, the home
+`useRecentUserGame` hook, and `EloHistoryChart` all route reads through it, so
+consumer code only ever sees the unified shape. Writes always use the unified
+shape — nothing in this codebase should ever persist a legacy doc again.
 
 ---
 
@@ -124,6 +141,7 @@ src/
 │   └── shared/              # Navbar, ProtectedRoute, LoadingSpinner, etc.
 ├── features/
 │   ├── auth/                # AuthProvider, useAuth, LoginPage
+│   ├── home/                # HomePage (at '/'), ProfileSummaryCard, LeagueSummaryCard, RecordGameFab
 │   ├── leagues/             # LeagueList, CreateLeague, JoinLeague, LeagueDetail
 │   ├── games/               # RecordGame form, GameHistory
 │   └── standings/           # GlobalLeaderboard, LeagueStandings, EloHistoryChart
@@ -141,28 +159,31 @@ src/
 
 ## ELO calculation
 
-The core function in `src/lib/elo.ts`:
+Two pure functions in `src/lib/elo.ts`:
 
 ```ts
-export function calculateElo(
-  winnerRating: number,
-  loserRating: number,
+export function calculateElo(winnerRating, loserRating, k) { /* standard */ }
+
+export function calculateTeamElo(
+  winnerRatings: number[],
+  loserRatings: number[],
   k: number,
-) {
-  const expected = 1 / (1 + Math.pow(10, (loserRating - winnerRating) / 400));
-  return {
-    winner: Math.round(winnerRating + k * (1 - expected)),
-    loser: Math.round(loserRating + k * (0 - expected)),
-  };
-}
+): { winnerDelta: number; loserDelta: number }
 ```
+
+`calculateTeamElo` averages each side's ratings, runs standard ELO on the two
+means, and returns a single delta per side; the recording code applies
+`winnerDelta` to every winning-team member and `loserDelta` to every losing-team
+member. A 1v1 game is the degenerate case with single-element arrays.
 
 K-factors:
 
 - `K_GLOBAL = 20` — conservative, prestigious global rating
 - `K_LEAGUE = 32` — more volatile, reflects league form
 
-When recording a game, call `calculateElo` twice (once per rating type), then commit all writes in a single `writeBatch`.
+When recording a game, call `calculateTeamElo` twice (once per rating type),
+build the `playerElo` map for every participant, then commit all writes in a
+single Firestore transaction.
 
 ---
 
@@ -203,8 +224,19 @@ Access via `import.meta.env.VITE_FIREBASE_*`.
 - Any authenticated user can read leagues and memberships (for discovery)
 - Only the league owner (`ownerId`) can delete a league
 - Membership writes require a valid `userId` matching the authenticated user
-- Game writes require both players to be members of the referenced league
+- Game writes require every participant (winner + loser ids) to be a member of the referenced league; the writer must be one of the participants
 - ELO fields on `users` and `memberships` may only be written as part of a game record (enforce via rules logic)
+- Game `photoUrl` may be patched post-create by a participant; no other field may change
+- `playerElo` may be rewritten by a participant or league admin/owner only during `deleteGame` recomputes
+
+## Firebase Storage
+
+Game photos live at `games/{leagueId}/{gameId}/photo.{ext}`. See
+`storage.rules`. Reads require a league membership; writes require the caller
+to be a participant of the referenced game, with a 5 MB + `image/*` cap.
+Upload flow: `recordGame` writes the game doc first (getting a `gameId`), then
+`uploadGamePhoto` uploads using that path, then `setGamePhoto` patches the
+`photoUrl` back onto the doc.
 
 ---
 
@@ -212,7 +244,7 @@ Access via `import.meta.env.VITE_FIREBASE_*`.
 
 - No backend / Cloud Functions / API routes
 - No email/password auth — social login only
-- No file uploads or avatars beyond Firebase Auth photoURL
+- No avatars beyond Firebase Auth photoURL (game photos are an intentional exception — see Firebase Storage section)
 - No payments or subscriptions
 - No push notifications
 - No admin panel

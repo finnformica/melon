@@ -22,6 +22,10 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import {
+  Dialog,
+  DialogContent,
+} from '@/components/ui/dialog'
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -44,6 +48,7 @@ export default function GameHistoryList({ leagueId }: { leagueId: string }) {
   const { user } = useAuth()
 
   const [pendingDelete, setPendingDelete] = useState<Game | null>(null)
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   const displayName = (uid: string): string => {
@@ -56,7 +61,7 @@ export default function GameHistoryList({ leagueId }: { leagueId: string }) {
   const canDelete = (game: Game): boolean => {
     if (!user) return false
     if (role === 'owner' || role === 'admin') return true
-    return game.winnerId === user.uid || game.loserId === user.uid
+    return game.winnerIds.includes(user.uid) || game.loserIds.includes(user.uid)
   }
 
   async function share(game: Game) {
@@ -106,16 +111,16 @@ export default function GameHistoryList({ leagueId }: { leagueId: string }) {
             {games.map((game) => (
               <li
                 key={game.id}
-                className="flex flex-col gap-1 py-3 sm:flex-row sm:items-center sm:justify-between"
+                className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between"
               >
-                <div className="flex flex-col">
+                <div className="flex min-w-0 flex-col gap-1">
                   <span className="text-sm">
                     <span className="font-medium">
-                      {displayName(game.winnerId)}
+                      {formatTeam(game.winnerIds, displayName)}
                     </span>{' '}
                     <span className="text-muted-foreground">defeated</span>{' '}
                     <span className="font-medium">
-                      {displayName(game.loserId)}
+                      {formatTeam(game.loserIds, displayName)}
                     </span>
                   </span>
                   <span className="text-xs text-muted-foreground">
@@ -125,32 +130,23 @@ export default function GameHistoryList({ leagueId }: { leagueId: string }) {
                         })
                       : 'just now'}
                   </span>
+                  {game.photoUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setLightboxUrl(game.photoUrl!)}
+                      className="w-fit rounded-md border p-0.5 transition-opacity hover:opacity-80"
+                    >
+                      <img
+                        src={game.photoUrl}
+                        alt="Game photo"
+                        className="h-12 w-12 rounded object-cover"
+                      />
+                    </button>
+                  )}
                 </div>
                 <div className="flex items-center gap-3 font-mono text-xs">
-                  <span
-                    className={deltaColorClass(
-                      game.winnerLeagueEloBefore,
-                      game.winnerLeagueEloAfter,
-                    )}
-                  >
-                    L{' '}
-                    {formatDelta(
-                      game.winnerLeagueEloBefore,
-                      game.winnerLeagueEloAfter,
-                    )}
-                  </span>
-                  <span
-                    className={deltaColorClass(
-                      game.loserLeagueEloBefore,
-                      game.loserLeagueEloAfter,
-                    )}
-                  >
-                    L{' '}
-                    {formatDelta(
-                      game.loserLeagueEloBefore,
-                      game.loserLeagueEloAfter,
-                    )}
-                  </span>
+                  <TeamDeltaPill uids={game.winnerIds} game={game} />
+                  <TeamDeltaPill uids={game.loserIds} game={game} />
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button
@@ -196,10 +192,10 @@ export default function GameHistoryList({ leagueId }: { leagueId: string }) {
             <AlertDialogHeader>
               <AlertDialogTitle>Delete this game?</AlertDialogTitle>
               <AlertDialogDescription>
-                {displayName(pendingDelete.winnerId)} defeated{' '}
-                {displayName(pendingDelete.loserId)}. All subsequent games in
-                this league will be recalculated to keep standings consistent.
-                This cannot be undone.
+                {formatTeam(pendingDelete.winnerIds, displayName)} defeated{' '}
+                {formatTeam(pendingDelete.loserIds, displayName)}. All
+                subsequent games in this league will be recalculated to keep
+                standings consistent. This cannot be undone.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -217,6 +213,39 @@ export default function GameHistoryList({ leagueId }: { leagueId: string }) {
           </AlertDialogContent>
         )}
       </AlertDialog>
+
+      <Dialog
+        open={lightboxUrl !== null}
+        onOpenChange={(o) => !o && setLightboxUrl(null)}
+      >
+        <DialogContent className="max-w-3xl">
+          {lightboxUrl && (
+            <img
+              src={lightboxUrl}
+              alt="Game photo"
+              className="w-full rounded-md object-contain"
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </>
+  )
+}
+
+function formatTeam(uids: string[], name: (uid: string) => string): string {
+  if (uids.length === 0) return '—'
+  if (uids.length === 1) return name(uids[0])
+  if (uids.length === 2) return `${name(uids[0])} & ${name(uids[1])}`
+  return `${name(uids[0])} + ${uids.length - 1} others`
+}
+
+function TeamDeltaPill({ uids, game }: { uids: string[]; game: Game }) {
+  // All teammates share the same league delta, so read any one entry.
+  const snap = uids.map((u) => game.playerElo[u]).find(Boolean)
+  if (!snap) return null
+  return (
+    <span className={deltaColorClass(snap.leagueBefore, snap.leagueAfter)}>
+      L {formatDelta(snap.leagueBefore, snap.leagueAfter)}
+    </span>
   )
 }
