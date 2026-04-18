@@ -26,34 +26,7 @@ export default function LeagueStandingsTable({
 }) {
   const { data: members, isLoading } = useMembers(leagueId)
 
-  if (isLoading || !members) {
-    return (
-      <Card>
-        <CardContent className="pt-6">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-12">#</TableHead>
-                <TableHead>Player</TableHead>
-                <TableHead className="text-right">League ELO</TableHead>
-                <TableHead className="text-right">Record</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {[0, 1, 2, 3, 4].map((i) => (
-                <TableRow key={i}>
-                  <TableCell><Skeleton className="h-4 w-4" /></TableCell>
-                  <TableCell><Skeleton className="h-4 w-32" /></TableCell>
-                  <TableCell className="text-right"><Skeleton className="ml-auto h-4 w-12" /></TableCell>
-                  <TableCell className="text-right"><Skeleton className="ml-auto h-4 w-16" /></TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-    )
-  }
+  if (isLoading) return <Skeleton className="h-40 w-full" />
 
   if (!members || members.length === 0) {
     return (

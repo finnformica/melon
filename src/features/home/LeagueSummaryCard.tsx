@@ -137,7 +137,7 @@ export function LeagueSummaryCard({
               <Trophy className="h-3.5 w-3.5" />
               <span>Standings</span>
             </div>
-            {!members ? (
+            {membersLoading || !members ? (
               <div className="flex flex-col gap-2">
                 {[0, 1, 2].map((i) => (
                   <div key={i} className="flex items-center gap-2">
