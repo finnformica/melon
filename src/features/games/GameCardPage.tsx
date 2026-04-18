@@ -1,8 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { format } from 'date-fns'
-import { Share2 } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
-import { toast } from 'sonner'
 
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
@@ -10,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/features/auth/AuthProvider'
+import { ShareButton } from '@/components/shared/ShareButton'
 import { getGame } from '@/lib/firestore'
 import { deltaColorClass, formatDelta } from '@/lib/format'
 import { SPORT_LABELS } from '@/lib/schemas'
@@ -125,16 +124,6 @@ export default function GameCardPage() {
     enabled: !!gameId,
   })
 
-  async function share() {
-    if (typeof window === 'undefined') return
-    try {
-      await navigator.clipboard.writeText(window.location.href)
-      toast.success('Link copied')
-    } catch {
-      toast.error('Could not copy link')
-    }
-  }
-
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center p-6">
@@ -205,10 +194,12 @@ export default function GameCardPage() {
           </p>
 
           <div className="flex flex-col items-center gap-2">
-            <Button onClick={() => void share()} className="w-full">
-              <Share2 className="mr-2 h-4 w-4" />
-              Share
-            </Button>
+            <ShareButton
+              url={window.location.href}
+              label="Share"
+              variant="default"
+              size="default"
+            />
             {user && (
               <Button asChild variant="ghost" size="sm">
                 <Link to={`/leagues/${game.leagueId}`}>View league</Link>

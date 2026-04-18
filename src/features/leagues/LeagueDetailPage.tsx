@@ -1,12 +1,12 @@
-import { Copy, Plus, Settings } from 'lucide-react'
+import { Plus, Settings } from 'lucide-react'
 import { useMatch, useNavigate, useParams } from 'react-router-dom'
-import { toast } from 'sonner'
 
 import { useLeagueRole } from '@/hooks/useLeagueRole'
 
 import LeagueStandingsTable from '@/features/standings/LeagueStandingsTable'
 import GameHistoryList from '@/features/games/GameHistoryList'
 import MembersList from '@/features/leagues/MembersList'
+import { ShareButton } from '@/components/shared/ShareButton'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -30,13 +30,6 @@ export default function LeagueDetailPage() {
   const gamesMatch = useMatch('/leagues/:leagueId/games')
   const membersMatch = useMatch('/leagues/:leagueId/members')
   const tab = gamesMatch ? 'games' : membersMatch ? 'members' : 'standings'
-
-  function copyInviteLink() {
-    if (!league) return
-    const inviteUrl = `${window.location.origin}/join/${league.inviteCode}`
-    void navigator.clipboard.writeText(inviteUrl)
-    toast.success('Invite link copied')
-  }
 
   if (isLoading) {
     return <Skeleton className="h-64 w-full" />
@@ -78,15 +71,10 @@ export default function LeagueDetailPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={copyInviteLink}
-            title="Copy invite link"
-          >
-            <Copy className="mr-2 h-4 w-4" />
-            <code className="font-mono">{league.inviteCode}</code>
-          </Button>
+          <ShareButton
+            url={`${window.location.origin}/join/${league.inviteCode}`}
+            label={league.inviteCode}
+          />
           <Button
             size="sm"
             onClick={() => navigate(`/leagues/${league.id}/record`)}
