@@ -1,5 +1,5 @@
 import { formatDistanceToNow } from 'date-fns'
-import { MoreHorizontal, Share2, Trash2 } from 'lucide-react'
+import { MoreHorizontal, Share2, Trash2, UserCheck } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 
@@ -66,6 +66,7 @@ export default function GameHistoryList({ leagueId }: { leagueId: string }) {
   const [replacingNpc, setReplacingNpc] = useState<{ game: Game; npcId: string } | null>(null)
   const [replaceTarget, setReplaceTarget] = useState('')
   const [replacing, setReplacing] = useState(false)
+  const [npcPickGame, setNpcPickGame] = useState<Game | null>(null)
 
   const displayName = (uid: string): string => {
     if (isNpcId(uid)) return 'NPC'
@@ -107,6 +108,15 @@ export default function GameHistoryList({ leagueId }: { leagueId: string }) {
       toast.error(err instanceof Error ? err.message : 'Delete failed')
     } finally {
       setBusy(false)
+    }
+  }
+
+  function startReplace(game: Game) {
+    const npcIds = [...game.winnerIds, ...game.loserIds].filter(isNpcId)
+    if (npcIds.length === 1) {
+      setReplacingNpc({ game, npcId: npcIds[0] })
+    } else {
+      setNpcPickGame(game)
     }
   }
 
@@ -197,6 +207,15 @@ export default function GameHistoryList({ leagueId }: { leagueId: string }) {
                         <Share2 className="mr-2 h-4 w-4" />
                         Share
                       </DropdownMenuItem>
+                      {canEdit() && [...game.winnerIds, ...game.loserIds].some(isNpcId) && (
+                        <>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem onSelect={() => startReplace(game)}>
+                            <UserCheck className="mr-2 h-4 w-4" />
+                            Replace NPC
+                          </DropdownMenuItem>
+                        </>
+                      )}
                       {canDelete(game) && (
                         <>
                           <DropdownMenuSeparator />
@@ -324,6 +343,41 @@ export default function GameHistoryList({ leagueId }: { leagueId: string }) {
               </div>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* NPC slot selector — shown when a game has more than one NPC */}
+      <Dialog
+        open={npcPickGame !== null}
+        onOpenChange={(o) => !o && setNpcPickGame(null)}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Which NPC to replace?</DialogTitle>
+            <DialogDescription>
+              This game has multiple NPC slots. Pick one to replace.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-2">
+            {npcPickGame &&
+              [...npcPickGame.winnerIds, ...npcPickGame.loserIds]
+                .filter(isNpcId)
+                .map((npcId, i) => {
+                  const side = npcPickGame.winnerIds.includes(npcId) ? 'winner' : 'loser'
+                  return (
+                    <Button
+                      key={npcId}
+                      variant="outline"
+                      onClick={() => {
+                        setReplacingNpc({ game: npcPickGame, npcId })
+                        setNpcPickGame(null)
+                      }}
+                    >
+                      NPC {i + 1} · {side} side
+                    </Button>
+                  )
+                })}
+          </div>
         </DialogContent>
       </Dialog>
 
