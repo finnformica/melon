@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
 
+import { RefreshButton } from '@/components/shared/RefreshButton'
 import {
   Card,
   CardContent,
@@ -9,10 +10,18 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useAuth } from '@/features/auth/AuthProvider'
 import EloHistoryChart from '@/features/standings/EloHistoryChart'
 import { getLeague, getMembershipsByUser, getUser } from '@/lib/firestore'
 import { formatRecord } from '@/lib/format'
 import type { League, Membership, User } from '@/types'
+
+function isPwa(): boolean {
+  return (
+    window.matchMedia('(display-mode: standalone)').matches ||
+    (navigator as Navigator & { standalone?: boolean }).standalone === true
+  )
+}
 
 interface ProfileData {
   user: User
@@ -34,6 +43,7 @@ async function fetchProfile(uid: string): Promise<ProfileData | null> {
 
 export default function PlayerProfilePage() {
   const { uid } = useParams<{ uid: string }>()
+  const { user: currentUser } = useAuth()
   const { data, isLoading } = useQuery({
     queryKey: ['profile', uid],
     queryFn: () => (uid ? fetchProfile(uid) : Promise.resolve(null)),
@@ -54,16 +64,21 @@ export default function PlayerProfilePage() {
 
   const { user, entries } = data
 
+  const showRefresh = currentUser?.uid === uid && isPwa()
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">
-          {user.displayName || user.email || 'Unknown player'}
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Global ELO {user.globalElo} ·{' '}
-          {formatRecord(user.globalWins, user.globalLosses)}
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold">
+            {user.displayName || user.email || 'Unknown player'}
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Global ELO {user.globalElo} ·{' '}
+            {formatRecord(user.globalWins, user.globalLosses)}
+          </p>
+        </div>
+        {showRefresh && <RefreshButton />}
       </div>
 
       <Card>
