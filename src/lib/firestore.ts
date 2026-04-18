@@ -1,5 +1,7 @@
 import {
   collection,
+  deleteDoc,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -10,15 +12,27 @@ import {
   runTransaction,
   serverTimestamp,
   setDoc,
+  updateDoc,
   where,
   writeBatch,
 } from 'firebase/firestore'
 
 import { K_GLOBAL, K_LEAGUE, calculateElo } from '@/lib/elo'
 import { db } from '@/lib/firebase'
-import type { CreateLeagueInput, RecordGameInput } from '@/lib/schemas'
+import type {
+  CreateLeagueInput,
+  RecordGameInput,
+  RenameLeagueInput,
+} from '@/lib/schemas'
 import { generateInviteCode } from '@/lib/utils'
-import type { Game, League, Membership, User } from '@/types'
+import type {
+  Game,
+  League,
+  LeagueRole,
+  Membership,
+  MembershipRole,
+  User,
+} from '@/types'
 
 export function membershipId(leagueId: string, userId: string): string {
   return `${leagueId}_${userId}`
@@ -235,4 +249,98 @@ export async function recordGame(input: RecordGameInput): Promise<string> {
 
     return gameRef.id
   })
+}
+
+// --- League admin helpers (Phase 9) ----------------------------------------
+
+export async function getLeagueRole(
+  leagueId: string,
+  uid: string,
+): Promise<LeagueRole | null> {
+  const [leagueSnap, membershipSnap] = await Promise.all([
+    getDoc(doc(db, 'leagues', leagueId)),
+    getDoc(doc(db, 'memberships', membershipId(leagueId, uid))),
+  ])
+  if (!leagueSnap.exists() || !membershipSnap.exists()) return null
+  const ownerId = leagueSnap.data().ownerId as string
+  if (ownerId === uid) return 'owner'
+  const role = (membershipSnap.data().role as MembershipRole | undefined) ??
+    'member'
+  return role
+}
+
+export async function renameLeague(
+  leagueId: string,
+  input: RenameLeagueInput,
+): Promise<void> {
+  await updateDoc(doc(db, 'leagues', leagueId), {
+    name: input.name.trim(),
+    sport: input.sport,
+  })
+}
+
+export async function rotateInviteCode(leagueId: string): Promise<string> {
+  const code = generateInviteCode()
+  await updateDoc(doc(db, 'leagues', leagueId), { inviteCode: code })
+  return code
+}
+
+export async function resetLeagueElos(leagueId: string): Promise<void> {
+  const memberships = await getMembershipsByLeague(leagueId)
+  const batch = writeBatch(db)
+  for (const m of memberships) {
+    batch.update(doc(db, 'memberships', m.id), {
+      leagueElo: 1000,
+      leagueWins: 0,
+      leagueLosses: 0,
+    })
+  }
+  await batch.commit()
+}
+
+export async function setMemberRole(
+  leagueId: string,
+  uid: string,
+  role: MembershipRole,
+): Promise<void> {
+  const ref = doc(db, 'memberships', membershipId(leagueId, uid))
+  // 'member' is the absence of the field; delete rather than write literal.
+  await updateDoc(ref, {
+    role: role === 'admin' ? 'admin' : deleteField(),
+  })
+}
+
+export async function removeMember(
+  leagueId: string,
+  uid: string,
+): Promise<void> {
+  await deleteDoc(doc(db, 'memberships', membershipId(leagueId, uid)))
+}
+
+export async function deleteLeague(leagueId: string): Promise<void> {
+  const [gamesSnap, membershipsSnap] = await Promise.all([
+    getDocs(query(collection(db, 'games'), where('leagueId', '==', leagueId))),
+    getDocs(
+      query(
+        collection(db, 'memberships'),
+        where('leagueId', '==', leagueId),
+      ),
+    ),
+  ])
+
+  const refs = [
+    ...gamesSnap.docs.map((d) => d.ref),
+    ...membershipsSnap.docs.map((d) => d.ref),
+  ]
+
+  const CHUNK = 450
+  for (let i = 0; i < refs.length; i += CHUNK) {
+    const batch = writeBatch(db)
+    for (const ref of refs.slice(i, i + CHUNK)) {
+      batch.delete(ref)
+    }
+    await batch.commit()
+  }
+
+  await deleteDoc(doc(db, 'leagues', leagueId))
 }

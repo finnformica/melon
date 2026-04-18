@@ -8,6 +8,7 @@ import CreateLeaguePage from '@/features/leagues/CreateLeaguePage'
 import AutoJoinLeaguePage from '@/features/leagues/AutoJoinLeaguePage'
 import JoinLeaguePage from '@/features/leagues/JoinLeaguePage'
 import LeagueDetailPage from '@/features/leagues/LeagueDetailPage'
+import LeagueSettingsPage from '@/features/leagues/LeagueSettingsPage'
 import LeaguesPage from '@/features/leagues/LeaguesPage'
 import NotFoundPage from '@/features/leagues/NotFoundPage'
 import GlobalLeaderboardPage from '@/features/standings/GlobalLeaderboardPage'
@@ -34,6 +35,7 @@ export const router = createBrowserRouter([
           { path: 'leagues/:leagueId/games', element: <LeagueDetailPage /> },
           { path: 'leagues/:leagueId/members', element: <LeagueDetailPage /> },
           { path: 'leagues/:leagueId/record', element: <RecordGamePage /> },
+          { path: 'leagues/:leagueId/settings', element: <LeagueSettingsPage /> },
           { path: 'leaderboard', element: <GlobalLeaderboardPage /> },
           { path: 'players/:uid', element: <PlayerProfilePage /> },
           { path: '*', element: <NotFoundPage /> },

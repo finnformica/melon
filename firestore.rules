@@ -13,6 +13,20 @@ service cloud.firestore {
       );
     }
 
+    function isLeagueOwner(leagueId) {
+      return exists(/databases/$(database)/documents/leagues/$(leagueId))
+        && get(/databases/$(database)/documents/leagues/$(leagueId)).data.ownerId == request.auth.uid;
+    }
+
+    function isLeagueAdmin(leagueId) {
+      return isLeagueMember(leagueId)
+        && get(/databases/$(database)/documents/memberships/$(leagueId + '_' + request.auth.uid)).data.role == 'admin';
+    }
+
+    function isLeagueAdminOrOwner(leagueId) {
+      return isLeagueOwner(leagueId) || isLeagueAdmin(leagueId);
+    }
+
     match /users/{uid} {
       allow read: if signedIn();
 
@@ -40,36 +54,46 @@ service cloud.firestore {
       allow create: if signedIn()
         && request.resource.data.ownerId == request.auth.uid;
 
+      // Owner and admins can edit league details; ownerId is immutable.
       allow update: if signedIn()
-        && resource.data.ownerId == request.auth.uid
+        && isLeagueAdminOrOwner(leagueId)
         && request.resource.data.ownerId == resource.data.ownerId;
 
       allow delete: if signedIn()
-        && resource.data.ownerId == request.auth.uid;
+        && isLeagueOwner(leagueId);
     }
 
     match /memberships/{membershipId} {
       allow read: if signedIn();
 
       // Composite ID enforces uniqueness and prevents impersonation.
-      // New membership must start at the initial rating.
+      // New membership must start at initial rating. Role must be absent or 'member'
+      // (admin role is only assigned by owner via a subsequent update).
       allow create: if signedIn()
         && request.resource.data.userId == request.auth.uid
         && membershipId == request.resource.data.leagueId + '_' + request.auth.uid
         && request.resource.data.leagueElo == 1000
         && request.resource.data.leagueWins == 0
-        && request.resource.data.leagueLosses == 0;
+        && request.resource.data.leagueLosses == 0
+        && (!('role' in request.resource.data) || request.resource.data.role == 'member');
 
-      // Any member of the league can update ELO/W/L fields (needed during recordGame).
+      // Any member of the league can update ELO/W/L fields (for recordGame).
       allow update: if signedIn()
         && isLeagueMember(resource.data.leagueId)
         && request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['leagueElo', 'leagueWins', 'leagueLosses']);
 
-      // Own membership (leave) or league owner (kick).
+      // Only the league owner can change a member's role.
+      allow update: if signedIn()
+        && isLeagueOwner(resource.data.leagueId)
+        && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['role'])
+        && (!('role' in request.resource.data) || request.resource.data.role in ['admin', 'member']);
+
+      // Own membership (leave) or admin/owner (kick).
       allow delete: if signedIn() && (
         resource.data.userId == request.auth.uid
-        || get(/databases/$(database)/documents/leagues/$(resource.data.leagueId)).data.ownerId == request.auth.uid
+        || isLeagueAdminOrOwner(resource.data.leagueId)
       );
     }
 
@@ -82,8 +106,12 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/memberships/$(request.resource.data.leagueId + '_' + request.resource.data.winnerId))
         && exists(/databases/$(database)/documents/memberships/$(request.resource.data.leagueId + '_' + request.resource.data.loserId));
 
-      // Immutable audit log.
-      allow update, delete: if false;
+      // Immutable for now — Phase 10 opens update for ELO recompute.
+      allow update: if false;
+
+      // League admin/owner can delete (needed for cascade on league delete).
+      // Phase 10 expands this to winner/loser of the game.
+      allow delete: if signedIn() && isLeagueAdminOrOwner(resource.data.leagueId);
     }
   }
 }

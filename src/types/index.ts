@@ -20,6 +20,8 @@ export interface League {
   createdAt: Timestamp
 }
 
+export type MembershipRole = 'admin' | 'member'
+
 export interface Membership {
   id: string
   userId: string
@@ -28,7 +30,12 @@ export interface Membership {
   leagueWins: number
   leagueLosses: number
   joinedAt: Timestamp
+  // Optional. Absent or 'member' means regular member.
+  // 'admin' grants league-management powers. Owner (league.ownerId) is implicit and does not use this field.
+  role?: MembershipRole
 }
+
+export type LeagueRole = 'owner' | 'admin' | 'member'
 
 export interface Game {
   id: string

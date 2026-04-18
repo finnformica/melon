@@ -9,20 +9,23 @@ import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table,
   TableBody,
-  TableCell,
   TableHead,
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import MemberRow from '@/features/leagues/MemberRow'
+import { useLeague } from '@/hooks/useLeague'
+import { useLeagueRole } from '@/hooks/useLeagueRole'
 import { useMembers } from '@/hooks/useMembers'
-import { formatRecord } from '@/lib/format'
 
 export default function MembersList({ leagueId }: { leagueId: string }) {
   const { data: members, isLoading } = useMembers(leagueId)
+  const { data: league } = useLeague(leagueId)
+  const { data: viewerRole } = useLeagueRole(leagueId)
 
   if (isLoading) return <Skeleton className="h-40 w-full" />
 
-  if (!members || members.length === 0) {
+  if (!members || members.length === 0 || !league) {
     return (
       <Card>
         <CardHeader>
@@ -41,18 +44,19 @@ export default function MembersList({ leagueId }: { leagueId: string }) {
             <TableRow>
               <TableHead>Player</TableHead>
               <TableHead>Record</TableHead>
+              <TableHead className="w-10" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {members.map(({ membership, user }) => (
-              <TableRow key={membership.id}>
-                <TableCell>
-                  {user?.displayName || user?.email || 'Unknown player'}
-                </TableCell>
-                <TableCell className="text-muted-foreground">
-                  {formatRecord(membership.leagueWins, membership.leagueLosses)}
-                </TableCell>
-              </TableRow>
+              <MemberRow
+                key={membership.id}
+                leagueId={leagueId}
+                ownerId={league.ownerId}
+                viewerRole={viewerRole ?? null}
+                membership={membership}
+                user={user}
+              />
             ))}
           </TableBody>
         </Table>

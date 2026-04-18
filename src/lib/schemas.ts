@@ -54,3 +54,12 @@ export const recordGameInputSchema = z
   })
 
 export type RecordGameInput = z.infer<typeof recordGameInputSchema>
+
+export const renameLeagueInputSchema = z.object({
+  name: z.string().trim().min(1, 'Name required').max(60, 'Name too long'),
+  sport: z.enum(SPORTS),
+})
+
+export type RenameLeagueInput = z.infer<typeof renameLeagueInputSchema>
+
+export const membershipRoleSchema = z.enum(['admin', 'member'])

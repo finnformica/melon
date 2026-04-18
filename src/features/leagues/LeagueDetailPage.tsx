@@ -1,6 +1,8 @@
-import { Copy, Plus } from 'lucide-react'
+import { Copy, Plus, Settings } from 'lucide-react'
 import { useMatch, useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
+
+import { useLeagueRole } from '@/hooks/useLeagueRole'
 
 import LeagueStandingsTable from '@/features/standings/LeagueStandingsTable'
 import GameHistoryList from '@/features/games/GameHistoryList'
@@ -22,6 +24,8 @@ export default function LeagueDetailPage() {
   const { leagueId } = useParams<{ leagueId: string }>()
   const navigate = useNavigate()
   const { data: league, isLoading } = useLeague(leagueId)
+  const { data: role } = useLeagueRole(leagueId)
+  const canManage = role === 'owner' || role === 'admin'
 
   const gamesMatch = useMatch('/leagues/:leagueId/games')
   const membersMatch = useMatch('/leagues/:leagueId/members')
@@ -70,6 +74,17 @@ export default function LeagueDetailPage() {
             <Copy className="mr-2 h-4 w-4" />
             <code className="font-mono">{league.inviteCode}</code>
           </Button>
+          {canManage && (
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-9 w-9"
+              onClick={() => navigate(`/leagues/${league.id}/settings`)}
+              title="League settings"
+            >
+              <Settings className="h-4 w-4" />
+            </Button>
+          )}
           <Button
             size="sm"
             onClick={() => navigate(`/leagues/${league.id}/record`)}
