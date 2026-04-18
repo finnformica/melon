@@ -103,7 +103,7 @@ export default function EloHistoryChart({
             type="monotone"
             dataKey="globalElo"
             name="Global"
-            stroke="oklch(0.556 0 0)"
+            stroke="oklch(0.78 0.14 85)"
             dot={false}
             strokeWidth={2}
           />
@@ -112,7 +112,7 @@ export default function EloHistoryChart({
               type="monotone"
               dataKey="leagueElo"
               name="League"
-              stroke="oklch(0.371 0 0)"
+              stroke="oklch(0.62 0.14 155)"
               dot={false}
               strokeWidth={2}
               connectNulls
