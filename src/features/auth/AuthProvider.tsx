@@ -8,7 +8,7 @@ import {
   signOut as firebaseSignOut,
 } from 'firebase/auth'
 import type { User as FirebaseUser } from 'firebase/auth'
-import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore'
+import { doc, getDoc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore'
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 
@@ -103,23 +103,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
+    let unsubscribeDoc: (() => void) | null = null
+
+    const unsubscribeAuth = onAuthStateChanged(auth, async (fbUser) => {
+      // Tear down any previous user-doc listener.
+      unsubscribeDoc?.()
+      unsubscribeDoc = null
+
       setFirebaseUser(fbUser)
+
       if (fbUser) {
         try {
-          const appUser = await ensureUserDocument(fbUser)
-          setUser(appUser)
+          // Ensure the Firestore doc exists before subscribing.
+          await ensureUserDocument(fbUser)
         } catch (err) {
-          console.error('Failed to load user document', err)
+          console.error('Failed to create user document', err)
           setUser(null)
+          setLoading(false)
+          return
         }
+
+        // Live listener so ELO/win/loss updates propagate without a refresh.
+        unsubscribeDoc = onSnapshot(
+          doc(db, 'users', fbUser.uid),
+          (snap) => {
+            if (snap.exists()) {
+              setUser({ uid: fbUser.uid, ...snap.data() } as User)
+            } else {
+              setUser(null)
+            }
+            setLoading(false)
+          },
+          (err) => {
+            console.error('User doc listener error', err)
+            setUser(null)
+            setLoading(false)
+          },
+        )
       } else {
         setUser(null)
+        setLoading(false)
       }
-      setLoading(false)
     })
 
-    return unsubscribe
+    return () => {
+      unsubscribeAuth()
+      unsubscribeDoc?.()
+    }
   }, [])
 
   const value = useMemo<AuthContextValue>(
