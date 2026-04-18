@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { ImagePlus, X } from 'lucide-react'
+import { ImagePlus, Loader2, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -291,7 +291,12 @@ export default function RecordGamePage() {
   }
 
   return (
-    <div className="mx-auto max-w-xl">
+    <div className="relative mx-auto max-w-xl">
+      {submitting && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-background/80 backdrop-blur-sm">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      )}
       <Card>
         <CardHeader>
           <CardTitle>Record a game — {league.name}</CardTitle>
