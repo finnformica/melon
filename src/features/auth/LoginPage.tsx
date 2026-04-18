@@ -1,6 +1,7 @@
 import { Mail } from 'lucide-react'
 import { useState } from 'react'
-import { Navigate } from 'react-router-dom'
+import { Navigate, useLocation } from 'react-router-dom'
+import type { Location } from 'react-router-dom'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -15,6 +16,17 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useAuth } from '@/features/auth/AuthProvider'
 
+function useRedirectTarget(): string {
+  const location = useLocation()
+  const stateFrom = (location.state as { from?: Location } | null)?.from
+  if (stateFrom?.pathname && stateFrom.pathname !== '/login') {
+    return stateFrom.pathname + (stateFrom.search ?? '')
+  }
+  const queryRedirect = new URLSearchParams(location.search).get('redirect')
+  if (queryRedirect) return queryRedirect
+  return '/'
+}
+
 export default function LoginPage() {
   const {
     user,
@@ -24,6 +36,8 @@ export default function LoginPage() {
     sendMagicLink,
     confirmMagicLinkEmail,
   } = useAuth()
+  const redirectTo = useRedirectTarget()
+
   const [email, setEmail] = useState('')
   const [confirmEmail, setConfirmEmail] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -31,7 +45,7 @@ export default function LoginPage() {
   const [submitting, setSubmitting] = useState(false)
 
   if (!loading && user) {
-    return <Navigate to="/" replace />
+    return <Navigate to={redirectTo} replace />
   }
 
   async function handleGoogle() {
@@ -52,7 +66,10 @@ export default function LoginPage() {
     setInfo(null)
     setSubmitting(true)
     try {
-      await sendMagicLink(email)
+      await sendMagicLink(
+        email,
+        redirectTo !== '/' ? redirectTo : undefined,
+      )
       setInfo(
         `Sign-in link sent to ${email}. If it doesn't arrive in a few seconds, check your spam folder.`,
       )
@@ -69,7 +86,9 @@ export default function LoginPage() {
     try {
       await confirmMagicLinkEmail(confirmEmail)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not complete sign-in')
+      setError(
+        err instanceof Error ? err.message : 'Could not complete sign-in',
+      )
     } finally {
       setSubmitting(false)
     }

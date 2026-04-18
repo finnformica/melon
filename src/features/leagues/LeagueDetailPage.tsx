@@ -26,10 +26,11 @@ export default function LeagueDetailPage() {
   const gamesMatch = useMatch('/leagues/:leagueId/games')
   const tab = gamesMatch ? 'games' : 'standings'
 
-  function copyInviteCode() {
+  function copyInviteLink() {
     if (!league) return
-    void navigator.clipboard.writeText(league.inviteCode)
-    toast.success('Invite code copied')
+    const inviteUrl = `${window.location.origin}/join/${league.inviteCode}`
+    void navigator.clipboard.writeText(inviteUrl)
+    toast.success('Invite link copied')
   }
 
   if (isLoading) {
@@ -59,7 +60,12 @@ export default function LeagueDetailPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" size="sm" onClick={copyInviteCode}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={copyInviteLink}
+            title="Copy invite link"
+          >
             <Copy className="mr-2 h-4 w-4" />
             <code className="font-mono">{league.inviteCode}</code>
           </Button>

@@ -5,6 +5,7 @@ import { ProtectedRoute } from '@/components/shared/ProtectedRoute'
 import LoginPage from '@/features/auth/LoginPage'
 import RecordGamePage from '@/features/games/RecordGamePage'
 import CreateLeaguePage from '@/features/leagues/CreateLeaguePage'
+import AutoJoinLeaguePage from '@/features/leagues/AutoJoinLeaguePage'
 import JoinLeaguePage from '@/features/leagues/JoinLeaguePage'
 import LeagueDetailPage from '@/features/leagues/LeagueDetailPage'
 import LeaguesPage from '@/features/leagues/LeaguesPage'
@@ -28,6 +29,7 @@ export const router = createBrowserRouter([
           { path: 'leagues', element: <LeaguesPage /> },
           { path: 'leagues/create', element: <CreateLeaguePage /> },
           { path: 'leagues/join', element: <JoinLeaguePage /> },
+          { path: 'join/:code', element: <AutoJoinLeaguePage /> },
           { path: 'leagues/:leagueId', element: <LeagueDetailPage /> },
           { path: 'leagues/:leagueId/games', element: <LeagueDetailPage /> },
           { path: 'leagues/:leagueId/record', element: <RecordGamePage /> },

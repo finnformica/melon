@@ -21,10 +21,21 @@ interface AuthContextValue {
   loading: boolean
   magicLinkNeedsEmail: boolean
   signInWithGoogle: () => Promise<void>
-  sendMagicLink: (email: string) => Promise<void>
+  sendMagicLink: (email: string, redirect?: string) => Promise<void>
   confirmMagicLinkEmail: (email: string) => Promise<void>
   signOut: () => Promise<void>
 }
+
+// Firebase-managed query params on the magic link landing page.
+// Stripped after completion so our own params (like `redirect`) survive.
+const FIREBASE_LINK_PARAMS = [
+  'oobCode',
+  'apiKey',
+  'mode',
+  'lang',
+  'continueUrl',
+  'tenantId',
+]
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined)
 
@@ -56,7 +67,16 @@ async function ensureUserDocument(firebaseUser: FirebaseUser): Promise<User> {
 async function completeMagicLink(email: string) {
   await signInWithEmailLink(auth, email, window.location.href)
   window.localStorage.removeItem(EMAIL_STORAGE_KEY)
-  window.history.replaceState({}, '', window.location.pathname)
+
+  // Strip Firebase's query params; keep any of our own (e.g. redirect).
+  const url = new URL(window.location.href)
+  FIREBASE_LINK_PARAMS.forEach((p) => url.searchParams.delete(p))
+  const search = url.searchParams.toString()
+  window.history.replaceState(
+    {},
+    '',
+    url.pathname + (search ? `?${search}` : ''),
+  )
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -108,9 +128,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       async signInWithGoogle() {
         await signInWithPopup(auth, new GoogleAuthProvider())
       },
-      async sendMagicLink(email: string) {
+      async sendMagicLink(email: string, redirect?: string) {
+        const url = new URL(`${window.location.origin}/login`)
+        if (redirect) url.searchParams.set('redirect', redirect)
         await sendSignInLinkToEmail(auth, email, {
-          url: `${window.location.origin}/login`,
+          url: url.toString(),
           handleCodeInApp: true,
         })
         window.localStorage.setItem(EMAIL_STORAGE_KEY, email)
