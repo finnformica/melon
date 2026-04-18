@@ -66,7 +66,7 @@ export function LeagueSummaryCard({
     [members, currentUserId],
   )
 
-  const top = members?.[0] ?? null
+  const top3 = members?.slice(0, 3) ?? []
   const lastGame: Game | null = games?.[0] ?? null
   const recentForUser = useMemo(() => {
     if (!games) return []
@@ -122,24 +122,38 @@ export function LeagueSummaryCard({
             <EloHistoryChart uid={currentUserId} leagueId={league.id} />
           </div>
 
-          <div className="flex items-center gap-2 text-sm">
-            <Trophy className="h-4 w-4 text-primary" />
-            <span className="text-muted-foreground">Top:</span>
-            {top?.user ? (
-              <>
-                <Avatar size="sm">
-                  <AvatarImage src={top.user.photoURL || undefined} />
-                  <AvatarFallback>{initials(name(top))}</AvatarFallback>
-                </Avatar>
-                <span className="font-medium">{name(top)}</span>
-                <span className="font-mono text-muted-foreground">
-                  {top.membership.leagueElo}
-                </span>
-              </>
-            ) : membersLoading ? (
-              <Skeleton className="h-4 w-32" />
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Trophy className="h-3.5 w-3.5" />
+              <span>Standings</span>
+            </div>
+            {membersLoading ? (
+              <Skeleton className="h-16 w-full" />
+            ) : top3.length > 0 ? (
+              top3.map((m, i) => {
+                const medalClass = [
+                  'bg-yellow-400/20 text-yellow-600 dark:text-yellow-400',
+                  'bg-slate-200/60 text-slate-500 dark:text-slate-400',
+                  'bg-orange-400/20 text-orange-600 dark:text-orange-500',
+                ][i]
+                return (
+                  <div key={m.membership.userId} className="flex items-center gap-2 text-sm">
+                    <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${medalClass}`}>
+                      {i + 1}
+                    </span>
+                    <Avatar size="sm">
+                      <AvatarImage src={m.user?.photoURL || undefined} />
+                      <AvatarFallback>{initials(name(m))}</AvatarFallback>
+                    </Avatar>
+                    <span className="truncate font-medium">{name(m)}</span>
+                    <span className="ml-auto font-mono text-xs text-muted-foreground">
+                      {m.membership.leagueElo}
+                    </span>
+                  </div>
+                )
+              })
             ) : (
-              <span className="text-muted-foreground">No members yet</span>
+              <span className="text-sm text-muted-foreground">No members yet</span>
             )}
           </div>
 
