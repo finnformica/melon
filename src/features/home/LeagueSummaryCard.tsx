@@ -137,8 +137,17 @@ export function LeagueSummaryCard({
               <Trophy className="h-3.5 w-3.5" />
               <span>Standings</span>
             </div>
-            {membersLoading ? (
-              <Skeleton className="h-16 w-full" />
+            {!members ? (
+              <div className="flex flex-col gap-2">
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <Skeleton className="h-4 w-4 shrink-0 rounded" />
+                    <Skeleton className="h-6 w-6 shrink-0 rounded-full" />
+                    <Skeleton className="h-4 flex-1" />
+                    <Skeleton className="h-4 w-10" />
+                  </div>
+                ))}
+              </div>
             ) : top3.length > 0 ? (
               top3.map((m, i) => {
                 const [Icon, iconClass] = [
