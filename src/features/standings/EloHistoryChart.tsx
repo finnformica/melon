@@ -96,7 +96,11 @@ function LeagueChart({ leagueId }: { leagueId: string }) {
         if (!map.has(u)) map.set(u, n)
       }
     }
-    return (u: string): string => map.get(u) ?? u.slice(0, 6)
+    const first = (n: string) => n.split(' ')[0]
+    return (u: string): string => {
+      const n = map.get(u)
+      return n ? first(n) : u.slice(0, 6)
+    }
   }, [members, games])
 
   if (isLoading) return <Skeleton className="h-64 w-full" />
@@ -111,7 +115,7 @@ function LeagueChart({ leagueId }: { leagueId: string }) {
   return (
     <div className="h-64 w-full">
       <ResponsiveContainer>
-        <LineChart data={rows}>
+        <LineChart data={rows} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
           <XAxis
             dataKey="t"
@@ -119,7 +123,7 @@ function LeagueChart({ leagueId }: { leagueId: string }) {
             stroke="currentColor"
             fontSize={12}
           />
-          <YAxis stroke="currentColor" fontSize={12} domain={['auto', 'auto']} />
+          <YAxis stroke="currentColor" fontSize={12} domain={['auto', 'auto']} width={44} />
           <Tooltip
             labelFormatter={(t) => new Date(t as number).toLocaleString()}
             contentStyle={{
