@@ -32,6 +32,7 @@ export const router = createBrowserRouter([
           { path: 'join/:code', element: <AutoJoinLeaguePage /> },
           { path: 'leagues/:leagueId', element: <LeagueDetailPage /> },
           { path: 'leagues/:leagueId/games', element: <LeagueDetailPage /> },
+          { path: 'leagues/:leagueId/members', element: <LeagueDetailPage /> },
           { path: 'leagues/:leagueId/record', element: <RecordGamePage /> },
           { path: 'leaderboard', element: <GlobalLeaderboardPage /> },
           { path: 'players/:uid', element: <PlayerProfilePage /> },

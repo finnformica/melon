@@ -87,13 +87,13 @@ export function Navbar() {
                 </Avatar>
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
+            <DropdownMenuContent align="end" className="w-64 max-w-[calc(100vw-2rem)]">
               <DropdownMenuLabel>
                 <div className="flex flex-col">
-                  <span className="text-sm">
+                  <span className="truncate text-sm">
                     {user?.displayName || 'Signed in'}
                   </span>
-                  <span className="text-xs font-normal text-muted-foreground">
+                  <span className="truncate text-xs font-normal text-muted-foreground">
                     {user?.email}
                   </span>
                 </div>
