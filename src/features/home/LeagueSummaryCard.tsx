@@ -1,6 +1,6 @@
 import { formatDistanceToNow } from 'date-fns'
 import { Award, ChevronRight, Crown, Trophy } from 'lucide-react'
-import { useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import type React from 'react'
 import { Link } from 'react-router-dom'
 
@@ -11,6 +11,13 @@ import {
   CardContent,
   CardHeader,
 } from '@/components/ui/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import EloHistoryChart from '@/features/standings/EloHistoryChart'
 import type { LeagueMember } from '@/hooks/useMembers'
@@ -81,8 +88,10 @@ export function LeagueSummaryCard({
   }, [games, currentUserId])
 
   const sportLabel = SPORT_LABELS[league.sport as Sport] ?? league.sport
+  const [selectedGame, setSelectedGame] = useState<Game | null>(null)
 
   return (
+    <>
     <Link
       to={`/leagues/${league.id}`}
       className="block transition-opacity hover:opacity-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-lg"
@@ -159,7 +168,7 @@ export function LeagueSummaryCard({
           {gamesLoading ? (
             <Skeleton className="h-16 w-full" />
           ) : lastGame ? (
-            <LastGameTile game={lastGame} nameOf={nameOf} />
+            <LastGameTile game={lastGame} nameOf={nameOf} onClick={() => setSelectedGame(lastGame)} />
           ) : (
             <p className="text-sm text-muted-foreground">
               No games recorded yet — tap + to record one.
@@ -192,15 +201,69 @@ export function LeagueSummaryCard({
         </CardContent>
       </Card>
     </Link>
+
+    <Dialog open={selectedGame !== null} onOpenChange={(o) => !o && setSelectedGame(null)}>
+      <DialogContent className="max-w-lg p-0 overflow-hidden">
+        {selectedGame && (
+          <>
+            {selectedGame.photoUrl && (
+              <img
+                src={selectedGame.photoUrl}
+                alt="Game photo"
+                className="w-full object-contain max-h-72"
+              />
+            )}
+            <div className="px-6 pt-4 pb-6 space-y-4">
+              <DialogHeader>
+                <DialogTitle>
+                  {formatTeam(selectedGame.winnerIds, nameOf)} defeated{' '}
+                  {formatTeam(selectedGame.loserIds, nameOf)}
+                </DialogTitle>
+                <DialogDescription>
+                  {selectedGame.playedAt
+                    ? formatDistanceToNow(selectedGame.playedAt.toDate(), { addSuffix: true })
+                    : 'just now'}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-1.5">
+                {[...selectedGame.winnerIds, ...selectedGame.loserIds].map((uid) => {
+                  const snap = selectedGame.playerElo[uid]
+                  const isWinner = selectedGame.winnerIds.includes(uid)
+                  if (!snap) return null
+                  return (
+                    <div key={uid} className="flex items-center justify-between gap-2">
+                      <span className={`truncate text-xs font-medium${isWinner ? '' : ' text-muted-foreground'}`}>
+                        {nameOf(uid)}
+                      </span>
+                      <div className="flex gap-3 font-mono text-xs">
+                        <span className={deltaColorClass(snap.globalBefore, snap.globalAfter)}>
+                          G {formatDelta(snap.globalBefore, snap.globalAfter)}
+                        </span>
+                        <span className={deltaColorClass(snap.leagueBefore, snap.leagueAfter)}>
+                          L {formatDelta(snap.leagueBefore, snap.leagueAfter)}
+                        </span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+    </>
   )
 }
 
 function LastGameTile({
   game,
   nameOf,
+  onClick,
 }: {
   game: Game
   nameOf: (uid: string) => string
+  onClick: () => void
 }) {
   const winnerSnap = game.playerElo[game.winnerIds[0]]
   const loserSnap = game.playerElo[game.loserIds[0]]
@@ -209,7 +272,10 @@ function LastGameTile({
     : 'just now'
 
   return (
-    <div className="flex flex-col gap-2 rounded-lg border bg-muted/30 p-3">
+    <div
+      className="flex flex-col gap-2 rounded-lg border bg-muted/30 p-3 cursor-pointer hover:bg-muted/50 transition-colors"
+      onClick={(e) => { e.preventDefault(); e.stopPropagation(); onClick() }}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-1">
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
