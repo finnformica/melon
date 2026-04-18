@@ -24,6 +24,9 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
 } from '@/components/ui/dialog'
 import {
   DropdownMenu,
@@ -48,7 +51,7 @@ export default function GameHistoryList({ leagueId }: { leagueId: string }) {
   const { user } = useAuth()
 
   const [pendingDelete, setPendingDelete] = useState<Game | null>(null)
-  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
+  const [selectedGame, setSelectedGame] = useState<Game | null>(null)
   const [busy, setBusy] = useState(false)
 
   const displayName = (uid: string): string => {
@@ -106,12 +109,13 @@ export default function GameHistoryList({ leagueId }: { leagueId: string }) {
   return (
     <>
       <Card>
-        <CardContent className="pt-6">
+        <CardContent className="px-6 pt-2 pb-3">
           <ul className="divide-y">
             {games.map((game) => (
               <li
                 key={game.id}
-                className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between"
+                onClick={() => setSelectedGame(game)}
+                className="flex cursor-pointer flex-col gap-2 py-2 transition-colors hover:opacity-80 sm:flex-row sm:items-center sm:justify-between"
               >
                 <div className="flex min-w-0 flex-col gap-1">
                   <span className="text-sm">
@@ -131,17 +135,11 @@ export default function GameHistoryList({ leagueId }: { leagueId: string }) {
                       : 'just now'}
                   </span>
                   {game.photoUrl && (
-                    <button
-                      type="button"
-                      onClick={() => setLightboxUrl(game.photoUrl!)}
-                      className="w-fit rounded-md border p-0.5 transition-opacity hover:opacity-80"
-                    >
-                      <img
-                        src={game.photoUrl}
-                        alt="Game photo"
-                        className="h-12 w-12 rounded object-cover"
-                      />
-                    </button>
+                    <img
+                      src={game.photoUrl}
+                      alt="Game photo"
+                      className="h-12 w-12 rounded border object-cover"
+                    />
                   )}
                 </div>
                 <div className="flex items-center gap-3 font-mono text-xs">
@@ -153,6 +151,7 @@ export default function GameHistoryList({ leagueId }: { leagueId: string }) {
                         variant="ghost"
                         size="icon"
                         className="h-7 w-7"
+                        onClick={(e) => e.stopPropagation()}
                       >
                         <MoreHorizontal className="h-4 w-4" />
                       </Button>
@@ -215,16 +214,57 @@ export default function GameHistoryList({ leagueId }: { leagueId: string }) {
       </AlertDialog>
 
       <Dialog
-        open={lightboxUrl !== null}
-        onOpenChange={(o) => !o && setLightboxUrl(null)}
+        open={selectedGame !== null}
+        onOpenChange={(o) => !o && setSelectedGame(null)}
       >
-        <DialogContent className="max-w-3xl">
-          {lightboxUrl && (
-            <img
-              src={lightboxUrl}
-              alt="Game photo"
-              className="w-full rounded-md object-contain"
-            />
+        <DialogContent className="max-w-lg p-0 overflow-hidden">
+          {selectedGame && (
+            <>
+              {selectedGame.photoUrl && (
+                <img
+                  src={selectedGame.photoUrl}
+                  alt="Game photo"
+                  className="w-full object-contain max-h-72"
+                />
+              )}
+              <div className="px-6 pt-4 pb-6 space-y-4">
+                <DialogHeader>
+                  <DialogTitle>
+                    {formatTeam(selectedGame.winnerIds, displayName)} defeated{' '}
+                    {formatTeam(selectedGame.loserIds, displayName)}
+                  </DialogTitle>
+                  <DialogDescription>
+                    {selectedGame.playedAt
+                      ? formatDistanceToNow(selectedGame.playedAt.toDate(), {
+                          addSuffix: true,
+                        })
+                      : 'just now'}
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-1.5">
+                  {[...selectedGame.winnerIds, ...selectedGame.loserIds].map((uid) => {
+                    const snap = selectedGame.playerElo[uid]
+                    const isWinner = selectedGame.winnerIds.includes(uid)
+                    if (!snap) return null
+                    return (
+                      <div key={uid} className="flex items-center justify-between gap-2">
+                        <span className={`truncate text-xs font-medium${isWinner ? '' : ' text-muted-foreground'}`}>
+                          {displayName(uid)}
+                        </span>
+                        <div className="flex gap-3 font-mono text-xs">
+                          <span className={deltaColorClass(snap.globalBefore, snap.globalAfter)}>
+                            G {formatDelta(snap.globalBefore, snap.globalAfter)}
+                          </span>
+                          <span className={deltaColorClass(snap.leagueBefore, snap.leagueAfter)}>
+                            L {formatDelta(snap.leagueBefore, snap.leagueAfter)}
+                          </span>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </>
           )}
         </DialogContent>
       </Dialog>
