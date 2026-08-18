@@ -41,6 +41,31 @@ export function membershipId(leagueId: string, userId: string): string {
   return `${leagueId}_${userId}`
 }
 
+// Firestore returns a bare "Missing or insufficient permissions." for every
+// rules rejection, which is indistinguishable from a bug in the calling code.
+// The recompute paths below are the ones whose rules are newest, so a stale
+// deploy of firestore.rules is the most likely cause — say so.
+async function commitOrExplain(
+  commit: () => Promise<void>,
+  action: string,
+): Promise<void> {
+  try {
+    await commit()
+  } catch (err) {
+    if (
+      typeof err === 'object' &&
+      err !== null &&
+      (err as { code?: string }).code === 'permission-denied'
+    ) {
+      throw new Error(
+        `${action} was rejected by Firestore. You must be a league admin or owner, ` +
+          'and the deployed Security Rules must be up to date (see DEPLOYING.md).',
+      )
+    }
+    throw err
+  }
+}
+
 // Returns a name that's safe to render on the public share card.
 // Rejects anything that looks like an email so legacy docs (where email
 // was used as a fallback displayName) don't leak PII.
@@ -551,7 +576,7 @@ export async function deleteGame(gameId: string): Promise<void> {
 
   batch.delete(gameRef)
 
-  await batch.commit()
+  await commitOrExplain(async () => { await batch.commit() }, 'Deleting the game')
 }
 
 // Replaces an NPC slot with a real league member and fully recomputes league
@@ -751,7 +776,7 @@ export async function replaceNpcAndRecalculate(
     if (Object.keys(update).length > 0) batch.update(doc(db, 'users', uid), update)
   }
 
-  await batch.commit()
+  await commitOrExplain(async () => { await batch.commit() }, 'Replacing the NPC')
 }
 
 // Replaces an NPC slot in an existing game with a real league member.
